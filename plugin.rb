@@ -10,8 +10,7 @@ enabled_site_setting :second_brain_enabled
 
 register_asset "stylesheets/common/second-brain.scss"
 
-register_svg_icon "plus"
-register_svg_icon "bolt"
+register_svg_icon "paper-plane"
 
 # Take over the homepage from the plugin itself — no separate theme needed.
 # HomepageHelper#resolve returns "custom" when this modifier is truthy, routing

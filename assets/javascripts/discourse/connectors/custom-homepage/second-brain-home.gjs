@@ -1,14 +1,10 @@
-import AskBrain from "../../components/ask-brain";
-import Capture from "../../components/capture";
-import RecentNotes from "../../components/recent-notes";
+import Chat from "../../components/chat";
 
 // The homepage. `register_modifier(:custom_homepage_enabled)` in plugin.rb
 // routes the homepage to discovery/custom, whose `custom-homepage` plugin
-// outlet renders this connector. A plain component tree — no Blocks API.
+// outlet renders this connector. The homepage is the chat with term-llm.
 <template>
   <div class="sb-home">
-    <AskBrain />
-    <Capture />
-    <RecentNotes @limit={{12}} />
+    <Chat />
   </div>
 </template>

@@ -18,12 +18,13 @@ module ::SecondBrain
       SiteSetting.second_brain_term_llm_url.present?
     end
 
-    # Non-streaming ask via /v1/chat/completions. Streaming and the richer
-    # /v1/responses agentic path (web search, widgets) build on this.
-    def ask(question)
+    # Non-streaming completion via /v1/chat/completions. `messages` is an array
+    # of { role:, content: } hashes (the conversation so far). Streaming and the
+    # richer /v1/responses agentic path (web search, widgets) build on this.
+    def complete(messages)
       raise NotConfigured if SiteSetting.second_brain_term_llm_url.blank?
 
-      body = { messages: [{ role: "user", content: question }], stream: false }
+      body = { messages: messages, stream: false }
       model = SiteSetting.second_brain_term_llm_model
       body[:model] = model if model.present?
 

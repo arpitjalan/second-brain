@@ -1,153 +1,77 @@
 // =============================================================================
-// Second Brain — homepage styling
-// Notion-flavored: spacious, card-based, calm. The custom-homepage connector
-// renders our capture + recent-notes components inside .sb-home.
+// Second Brain — chat homepage styling
+// Discourse is the UI for term-llm. The homepage is a calm chat surface.
 // =============================================================================
 
-$sb-max-width: 720px;
-$sb-radius: 12px;
+$sb-max-width: 760px;
+$sb-radius: 14px;
 
 // Center the homepage into a single calm column.
 .sb-home {
   max-width: $sb-max-width;
-  margin: 40px auto;
+  margin: 32px auto;
   padding-inline: 16px;
 }
 
-// ---- Ask the brain (term-llm) ----------------------------------------------
-.sb-ask {
-  margin-bottom: 28px;
+.sb-chat {
+  display: flex;
+  flex-direction: column;
 
-  &__bar {
+  &__log {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  &__msg {
+    max-width: 85%;
+    padding: 12px 16px;
+    border-radius: $sb-radius;
+    line-height: 1.6;
+    white-space: pre-wrap;
+
+    &--user {
+      align-self: flex-end;
+      background: var(--tertiary-low);
+    }
+
+    &--assistant {
+      align-self: flex-start;
+      background: var(--primary-very-low);
+      border: 1px solid var(--primary-low);
+    }
+
+    &--pending {
+      color: var(--primary-medium);
+      font-style: italic;
+    }
+  }
+
+  // Composer pinned to the bottom of the column.
+  &__composer {
     display: flex;
     gap: 8px;
+    align-items: flex-end;
+    position: sticky;
+    bottom: 16px;
+    padding-top: 8px;
+    background: var(--secondary);
   }
 
   &__input {
     flex: 1;
+    resize: none;
     padding: 12px 14px;
     font-size: var(--font-up-1);
+    line-height: 1.5;
     border: 1px solid var(--primary-low);
     border-radius: $sb-radius;
-    background: var(--secondary);
-
-    &:focus {
-      border-color: var(--tertiary);
-      outline: none;
-    }
-  }
-
-  &__status {
-    margin-top: 10px;
-    color: var(--primary-medium);
-  }
-
-  &__answer {
-    margin-top: 12px;
-    padding: 14px 16px;
     background: var(--primary-very-low);
-    border: 1px solid var(--primary-low);
-    border-radius: $sb-radius;
-    line-height: 1.6;
-    white-space: pre-wrap;
-  }
-}
-
-// ---- Capture block ----------------------------------------------------------
-.sb-capture {
-  padding: 14px 16px;
-  // --primary-very-low reads as a card in both light and dark schemes.
-  background: var(--primary-very-low);
-  border: 1px solid var(--primary-low);
-  border-radius: $sb-radius;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
-
-  &:focus-within {
-    border-color: var(--tertiary);
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
-  }
-
-  &__input {
-    width: 100%;
-    border: none;
-    background: transparent;
-    resize: none;
-    padding: 0;
-    font-size: var(--font-up-1);
-    line-height: 1.5;
 
     &:focus {
       outline: none;
-      box-shadow: none;
+      border-color: var(--tertiary);
     }
-  }
-
-  &__actions {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-top: 10px;
-  }
-
-  &__hint {
-    font-size: var(--font-down-1);
-    color: var(--primary-medium);
-  }
-}
-
-// ---- Recent notes block -----------------------------------------------------
-.sb-recent {
-  margin-top: 32px;
-
-  &__heading {
-    font-size: var(--font-up-1);
-    font-weight: 600;
-    color: var(--primary-medium);
-    margin-bottom: 12px;
-  }
-
-  &__status {
-    color: var(--primary-medium);
-  }
-
-  &__list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-}
-
-// A single note card.
-.sb-note {
-  padding: 12px 16px;
-  margin-bottom: 8px;
-  background: var(--primary-very-low);
-  border: 1px solid var(--primary-low);
-  border-radius: $sb-radius;
-  transition:
-    background 0.12s ease,
-    border-color 0.12s ease;
-
-  &:hover {
-    background: var(--primary-low);
-    border-color: var(--primary-medium);
-  }
-
-  &__title {
-    display: block;
-    font-size: var(--font-up-1);
-    font-weight: 600;
-    line-height: 1.3;
-    color: var(--primary);
-  }
-
-  &__excerpt {
-    margin: 4px 0 0;
-    font-size: var(--font-down-1);
-    color: var(--primary-medium);
-    line-height: 1.5;
   }
 }
