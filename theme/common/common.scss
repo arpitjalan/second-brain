@@ -1,0 +1,114 @@
+// =============================================================================
+// Second Brain — homepage (Blocks) styling
+// Notion-flavored: spacious, card-based, calm. The homepage-blocks outlet
+// renders our capture + recent-notes blocks; we style them here.
+// =============================================================================
+
+$sb-max-width: 720px;
+$sb-radius: 12px;
+
+// The custom homepage outlet wrapper — center it into a single calm column.
+.block-outlet--homepage-blocks {
+  max-width: $sb-max-width;
+  margin: 40px auto;
+  padding-inline: 16px;
+}
+
+// ---- Capture block ----------------------------------------------------------
+.sb-capture {
+  padding: 14px 16px;
+  // --primary-very-low reads as a card in both light and dark schemes.
+  background: var(--primary-very-low);
+  border: 1px solid var(--primary-low);
+  border-radius: $sb-radius;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:focus-within {
+    border-color: var(--tertiary);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
+  }
+
+  &__input {
+    width: 100%;
+    border: none;
+    background: transparent;
+    resize: none;
+    padding: 0;
+    font-size: var(--font-up-1);
+    line-height: 1.5;
+
+    &:focus {
+      outline: none;
+      box-shadow: none;
+    }
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 10px;
+  }
+
+  &__hint {
+    font-size: var(--font-down-1);
+    color: var(--primary-medium);
+  }
+}
+
+// ---- Recent notes block -----------------------------------------------------
+.sb-recent {
+  margin-top: 32px;
+
+  &__heading {
+    font-size: var(--font-up-1);
+    font-weight: 600;
+    color: var(--primary-medium);
+    margin-bottom: 12px;
+  }
+
+  &__status {
+    color: var(--primary-medium);
+  }
+
+  &__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+// A single note card.
+.sb-note {
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  background: var(--primary-very-low);
+  border: 1px solid var(--primary-low);
+  border-radius: $sb-radius;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+
+  &:hover {
+    background: var(--primary-low);
+    border-color: var(--primary-medium);
+  }
+
+  &__title {
+    display: block;
+    font-size: var(--font-up-1);
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--primary);
+  }
+
+  &__excerpt {
+    margin: 4px 0 0;
+    font-size: var(--font-down-1);
+    color: var(--primary-medium);
+    line-height: 1.5;
+  }
+}

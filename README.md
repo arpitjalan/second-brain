@@ -1,63 +1,53 @@
 # Second Brain
 
-Turns Discourse into a personal knowledge organizer — a calm, Notion-flavored
+Turn Discourse into a personal knowledge organizer — a calm, Notion-flavored
 "second brain" rather than a public community. A **note** is a Discourse topic;
 replies are sub-thoughts / annotations.
 
-Single repo, single plugin: it carries the Ruby backend, the Ember frontend
-(capture box + reskin), and the styles together.
-
-## Roadmap
-
-- **M1 — Reskin (this milestone).** Capture box pinned to the homepage, notes
-  rendered as cards, and the forum/social chrome (likes, badges, trust levels,
-  avatars, view/reply/post counts) stripped away.
-- **M2 — term-llm sidecar.** Run [term-llm](https://term-llm.com) as a local
-  HTTP service. On new note: embed + auto-tag + summarize. Add an "ask my brain"
-  RAG panel. See `plugin.rb` `after_initialize` for the hook points.
-
-## Layout
+One repo, two artifacts:
 
 ```
-plugin.rb                                  metadata, asset + setting registration
-config/settings.yml                        site settings
-config/locales/{client,server}.en.yml      strings
-assets/stylesheets/second-brain.scss       the reskin
-assets/javascripts/discourse/
-  components/capture-box.gjs               the capture component
-  connectors/above-main-container/         injects capture box atop the homepage
+plugin/   Discourse plugin — the backend "brain"
+          · seeds calm global setting defaults (db/migrate)
+          · (M2) term-llm sidecar: embed / auto-tag / "ask my brain"
+          Symlinked into a Discourse checkout at plugins/second-brain.
+
+theme/    Discourse theme — owns the homepage UI
+          · custom_homepage modifier → takes over the homepage route
+          · Blocks API layout: a capture block + a recent-notes block
+          Installed via Admin → Customize → Themes.
 ```
 
-## Settings — applied automatically on install
+## Why a plugin *and* a theme
 
-The calm layout comes from Discourse's own settings, not CSS hacks. A migration
-(`db/migrate/…_configure_second_brain_defaults.rb`) seeds these on install via
-`INSERT … ON CONFLICT (name) DO NOTHING`, so a fresh site gets the full
-experience for free — and an existing site that already customized one of these
-keeps its own value (we never clobber a deliberate choice):
+The homepage is replaced via Discourse's `custom_homepage` **theme modifier** —
+a plugin cannot set it, so the UI half must be a theme. The reasoning/back end
+(term-llm, setting seeds) is a plugin. They're developed together here.
 
-| Setting | Value | Why |
-|---|---|---|
-| `enable_welcome_banner` | `false` | Kills the "Welcome, …" banner + its search (the capture box replaces it) |
-| `top_menu` | `latest` | Collapses the Latest/Hot/Categories nav pills |
-| `enable_chat` | `false` | Removes the CHANNELS sidebar section |
-| `post_menu` | default minus `like` | Drops the Like button on posts (read from the live default, so it's version-safe) |
+## Architecture
 
-Two things stay manual (no yaml toggle exists, and they're per-taste):
+```
+theme (custom_homepage) ──► homepage-blocks outlet
+                              ├─ second-brain-capture      (opens composer)
+                              └─ second-brain-recent-notes (latest topics)
+plugin ──► global setting seeds today;  (M2) term-llm HTTP sidecar
+                              └─ (M2) ask-my-brain block → RAG over your notes
+```
 
-- `second_brain_capture_category` — the category captured notes land in (optional).
-- Sidebar **sections** — tailor under **Admin → Customize → Sidebar**, or switch
-  `navigation_menu` to `header_dropdown` to drop the left rail entirely.
+## Status
 
-The CSS then only does what settings can't: card styling/contrast, spacing,
-typography, and hiding avatars + view/reply counts.
+- **M1 — homepage reskin (in progress):** capture + recent-notes blocks on a
+  custom homepage. Built on the **Blocks API**, which is marked `@experimental`
+  in core — expect to track changes.
+- **M2 — term-llm sidecar:** see `plugin/plugin.rb` `after_initialize`.
 
-## Try it
+## Install (dev)
 
-1. Enable the plugin — it builds with Discourse and `db:migrate` seeds the
-   settings above; no manual flipping.
-2. Open the homepage: type a thought, press Enter — the first line becomes the
-   note title, the rest prefills the body, and the composer opens.
+1. **Plugin:** already symlinked into your Discourse checkout at
+   `plugins/second-brain`; it builds with Discourse. `db:migrate` seeds the
+   global setting defaults (see `plugin/README.md`).
+2. **Theme:** Admin → Customize → Themes → Install → *From your device / git*,
+   pointing at the `theme/` directory (or use the `discourse_theme` CLI to
+   watch it during development). Set it as the active theme.
 
-The SCSS selectors target current Discourse markup and may need small tweaks
-against your running instance.
+See `plugin/README.md` and `theme/README.md` for specifics.
