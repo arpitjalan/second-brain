@@ -25,6 +25,13 @@ after_initialize do
   # Discourse is the UI for term-llm: this endpoint proxies questions to the
   # term-llm server (Bearer token stays server-side) and returns the answer.
   # Streaming + the agentic /v1/responses path (web search, widgets) build here.
+  #
+  # NOTE: this plugin is symlinked into plugins/, and Discourse does not add a
+  # symlinked plugin's app/ dirs to Rails' autoload paths — so app/ classes
+  # won't autoload. We require the controller explicitly (no Zeitwerk conflict
+  # precisely because it isn't on an autoload path).
+  require_relative "app/controllers/second_brain/ask_controller"
+
   Discourse::Application.routes.append do
     post "/second-brain/ask" => "second_brain/ask#create"
   end
