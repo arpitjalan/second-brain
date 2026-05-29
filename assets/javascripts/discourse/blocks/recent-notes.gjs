@@ -5,7 +5,7 @@ import { block } from "discourse/blocks";
 
 // Recent notes: the latest topics, rendered as calm cards beneath the capture
 // box. `args.limit` (passed from renderBlocks) caps how many we show.
-@block("second-brain-recent-notes", {
+@block("second-brain:recent-notes", {
   description: "Your most recent notes as cards",
 })
 export default class RecentNotesBlock extends Component {

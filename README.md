@@ -15,8 +15,8 @@ plugin.rb
   register_modifier(:custom_homepage_enabled) { true }   # HomepageHelper → "custom" route
                                                           # → renders the homepage-blocks outlet
 assets/javascripts/discourse/
-  blocks/capture.gjs            @block("second-brain-capture")        opens the composer
-  blocks/recent-notes.gjs       @block("second-brain-recent-notes")   latest topics as cards
+  blocks/capture.gjs            @block("second-brain:capture")        opens the composer
+  blocks/recent-notes.gjs       @block("second-brain:recent-notes")   latest topics as cards
   pre-initializers/…register-blocks registerBlock(...)  — app init, BEFORE freeze-block-registry
   api-initializers/…homepage        renderBlocks("homepage-blocks", [...]) — AFTER freeze
 assets/stylesheets/common/second-brain.scss   Notion-calm BEM styling

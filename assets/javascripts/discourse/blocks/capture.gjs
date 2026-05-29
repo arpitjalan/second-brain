@@ -10,7 +10,7 @@ import DButton from "discourse/components/d-button";
 // The first line of what you type becomes the note (topic) title; the rest
 // prefills the body. Submitting opens the composer, so drafts, validation and
 // uploads all go through Discourse's normal posting pipeline.
-@block("second-brain-capture", {
+@block("second-brain:capture", {
   description: "Quick-capture box for new notes",
 })
 export default class CaptureBlock extends Component {
