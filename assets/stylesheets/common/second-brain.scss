@@ -8,7 +8,8 @@ $sb-max-width: 720px;
 $sb-radius: 12px;
 
 // The custom homepage outlet wrapper — center it into a single calm column.
-.block-outlet--homepage-blocks {
+// Core names it "{outlet}__container" (colons→hyphens) via css.js.
+.homepage-blocks__container {
   max-width: $sb-max-width;
   margin: 40px auto;
   padding-inline: 16px;

@@ -1,5 +1,6 @@
 import Component from "@glimmer/component";
 import { tracked } from "@glimmer/tracking";
+import { trustHTML } from "@ember/template";
 import { service } from "@ember/service";
 import { block } from "discourse/blocks";
 
@@ -47,9 +48,11 @@ export default class RecentNotesBlock extends Component {
         <ul class="sb-recent__list">
           {{#each this.notes as |note|}}
             <li class="sb-note">
-              <a class="sb-note__title" href={{note.url}}>{{note.title}}</a>
+              <a class="sb-note__title" href={{note.url}}>
+                {{trustHTML note.fancyTitle}}
+              </a>
               {{#if note.excerpt}}
-                <p class="sb-note__excerpt">{{note.excerpt}}</p>
+                <p class="sb-note__excerpt">{{trustHTML note.excerpt}}</p>
               {{/if}}
             </li>
           {{/each}}
