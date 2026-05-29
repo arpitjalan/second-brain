@@ -3,12 +3,13 @@ import CaptureBlock from "../blocks/capture";
 import RecentNotesBlock from "../blocks/recent-notes";
 
 // Block components must be registered before core's "freeze-block-registry"
-// initializer freezes the registry. Pre-initializers are application
-// initializers, which run before all instance initializers (freeze-block-registry
-// among them) — so this is the right place. The matching layout is configured
-// later in api-initializers/second-brain-homepage.js.
+// freezes the registry. That freeze is an application initializer, so this must
+// be a pre-initializer (also application-phase) AND declare `before:` to be
+// ordered ahead of it — the directory alone isn't enough. The matching layout
+// is configured later in api-initializers/second-brain-homepage.js.
 export default {
   name: "second-brain-register-blocks",
+  before: "freeze-block-registry",
 
   initialize() {
     withPluginApi((api) => {
