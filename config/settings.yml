@@ -15,3 +15,11 @@ plugins:
     secret: true
   second_brain_term_llm_model:
     default: ""
+  # --- chat (PM-backed) ---
+  second_brain_bot_username:
+    default: "stan"
+    client: true
+  second_brain_public_category:
+    default: ""
+    type: category
+    client: true
