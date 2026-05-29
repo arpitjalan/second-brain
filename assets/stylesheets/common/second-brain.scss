@@ -1,77 +1,38 @@
 // =============================================================================
-// Second Brain — chat homepage styling
-// Discourse is the UI for term-llm. The homepage is a calm chat surface.
+// Second Brain — homepage launcher styling
+// Discourse is the UI for term-llm. A chat is a PM with the bot, so the
+// homepage is a calm launcher; the conversation uses Discourse's message view.
 // =============================================================================
 
-$sb-max-width: 760px;
-$sb-radius: 14px;
+$sb-max-width: 640px;
 
 // Center the homepage into a single calm column.
 .sb-home {
   max-width: $sb-max-width;
-  margin: 32px auto;
+  margin: 64px auto;
   padding-inline: 16px;
 }
 
-.sb-chat {
-  display: flex;
-  flex-direction: column;
+.sb-launcher {
+  text-align: center;
 
-  &__log {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    margin-bottom: 16px;
+  &__title {
+    font-size: var(--font-up-4);
+    font-weight: 700;
+    margin-bottom: 8px;
   }
 
-  &__msg {
-    max-width: 85%;
-    padding: 12px 16px;
-    border-radius: $sb-radius;
+  &__subtitle {
+    color: var(--primary-medium);
     line-height: 1.6;
-    white-space: pre-wrap;
-
-    &--user {
-      align-self: flex-end;
-      background: var(--tertiary-low);
-    }
-
-    &--assistant {
-      align-self: flex-start;
-      background: var(--primary-very-low);
-      border: 1px solid var(--primary-low);
-    }
-
-    &--pending {
-      color: var(--primary-medium);
-      font-style: italic;
-    }
+    margin: 0 auto 24px;
+    max-width: 36em;
   }
 
-  // Composer pinned to the bottom of the column.
-  &__composer {
+  &__actions {
     display: flex;
-    gap: 8px;
-    align-items: flex-end;
-    position: sticky;
-    bottom: 16px;
-    padding-top: 8px;
-    background: var(--secondary);
-  }
-
-  &__input {
-    flex: 1;
-    resize: none;
-    padding: 12px 14px;
-    font-size: var(--font-up-1);
-    line-height: 1.5;
-    border: 1px solid var(--primary-low);
-    border-radius: $sb-radius;
-    background: var(--primary-very-low);
-
-    &:focus {
-      outline: none;
-      border-color: var(--tertiary);
-    }
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
   }
 }
