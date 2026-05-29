@@ -1,0 +1,8 @@
+plugins:
+  second_brain_enabled:
+    default: true
+    client: true
+  second_brain_capture_category:
+    default: ""
+    type: category
+    client: true

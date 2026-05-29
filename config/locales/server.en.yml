@@ -1,0 +1,4 @@
+en:
+  site_settings:
+    second_brain_enabled: "Enable Second Brain — the personal knowledge organizer reskin."
+    second_brain_capture_category: "Category new notes are captured into. Leave blank to use the composer default."

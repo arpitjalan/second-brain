@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+
+# Local / editor cruft
+.DS_Store
+*.log
+*.swp
+.idea/
+.vscode/
+
+# Local config & secrets (never commit)
+.env
+*.local
