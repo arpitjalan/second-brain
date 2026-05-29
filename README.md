@@ -47,11 +47,25 @@ are no longer about the home screen.)
 
 ## Roadmap
 
-- **M1 — Homepage (in progress).** Capture + recent-notes on a plugin-owned
-  custom homepage via the stable `custom-homepage` plugin outlet.
-- **M2 — term-llm sidecar.** Run [term-llm](https://term-llm.com) as a local
-  HTTP service; on new note embed / auto-tag / summarize; add an `<AskBrain />`
-  component doing RAG over your notes. Hook points in `plugin.rb` `after_initialize`.
+- **M1 — Homepage.** Capture + recent-notes on a plugin-owned custom homepage
+  via the stable `custom-homepage` plugin outlet.
+- **M2 — Discourse as term-llm's UI (in progress).** The plugin proxies to a
+  [term-llm](https://term-llm.com) `serve` instance so the family can use its
+  featureset (answers, web search, widgets) from inside Discourse.
+  - **Now:** `<AskBrain />` on the homepage → `POST /second-brain/ask` →
+    server-side proxy → term-llm `/v1/chat/completions` → answer. Non-streaming.
+  - **Next:** streaming + web-search activity + agentic `/v1/responses` +
+    embedded widgets + term-llm tools that act on the Discourse knowledgebase.
+
+### term-llm connection settings
+
+Set in Admin → Settings (the API key is server-side only, never sent to the browser):
+
+| Setting | Notes |
+|---|---|
+| `second_brain_term_llm_url` | Base URL incl. base path, e.g. `https://brain.example.com/ui` |
+| `second_brain_term_llm_api_key` | Bearer token for the term-llm server (secret) |
+| `second_brain_term_llm_model` | Optional; blank = term-llm default |
 
 ## Install (dev)
 

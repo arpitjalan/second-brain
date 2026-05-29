@@ -14,6 +14,45 @@ $sb-radius: 12px;
   padding-inline: 16px;
 }
 
+// ---- Ask the brain (term-llm) ----------------------------------------------
+.sb-ask {
+  margin-bottom: 28px;
+
+  &__bar {
+    display: flex;
+    gap: 8px;
+  }
+
+  &__input {
+    flex: 1;
+    padding: 12px 14px;
+    font-size: var(--font-up-1);
+    border: 1px solid var(--primary-low);
+    border-radius: $sb-radius;
+    background: var(--secondary);
+
+    &:focus {
+      border-color: var(--tertiary);
+      outline: none;
+    }
+  }
+
+  &__status {
+    margin-top: 10px;
+    color: var(--primary-medium);
+  }
+
+  &__answer {
+    margin-top: 12px;
+    padding: 14px 16px;
+    background: var(--primary-very-low);
+    border: 1px solid var(--primary-low);
+    border-radius: $sb-radius;
+    line-height: 1.6;
+    white-space: pre-wrap;
+  }
+}
+
 // ---- Capture block ----------------------------------------------------------
 .sb-capture {
   padding: 14px 16px;

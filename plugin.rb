@@ -11,6 +11,7 @@ enabled_site_setting :second_brain_enabled
 register_asset "stylesheets/common/second-brain.scss"
 
 register_svg_icon "plus"
+register_svg_icon "bolt"
 
 # Take over the homepage from the plugin itself — no separate theme needed.
 # HomepageHelper#resolve returns "custom" when this modifier is truthy, routing
@@ -18,9 +19,13 @@ register_svg_icon "plus"
 # our connector (assets/javascripts/discourse/connectors/custom-homepage/).
 register_modifier(:custom_homepage_enabled) { true }
 
+require_relative "lib/second_brain/term_llm_client"
+
 after_initialize do
-  # Milestone 2+ will hook the term-llm reasoning sidecar here:
-  #   - on_post_created -> embed / auto-tag / summarize via term-llm HTTP API
-  #   - an "ask my brain" endpoint that proxies RAG queries to term-llm
-  #     (surfaced as an <AskBrain /> component on the homepage)
+  # Discourse is the UI for term-llm: this endpoint proxies questions to the
+  # term-llm server (Bearer token stays server-side) and returns the answer.
+  # Streaming + the agentic /v1/responses path (web search, widgets) build here.
+  Discourse::Application.routes.append do
+    post "/second-brain/ask" => "second_brain/ask#create"
+  end
 end

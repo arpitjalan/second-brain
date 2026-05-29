@@ -6,3 +6,12 @@ plugins:
     default: ""
     type: category
     client: true
+  # --- term-llm connection (the brain) ---
+  second_brain_term_llm_url:
+    default: ""
+    client: true
+  second_brain_term_llm_api_key:
+    default: ""
+    secret: true
+  second_brain_term_llm_model:
+    default: ""

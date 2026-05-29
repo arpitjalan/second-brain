@@ -2,3 +2,10 @@ en:
   site_settings:
     second_brain_enabled: "Enable Second Brain — the personal knowledge organizer reskin."
     second_brain_capture_category: "Category new notes are captured into. Leave blank to use the composer default."
+    second_brain_term_llm_url: "Base URL of your term-llm server, including its base path (e.g. https://brain.example.com/ui). The plugin calls its OpenAI-compatible API server-side."
+    second_brain_term_llm_api_key: "Bearer token for the term-llm server (sent server-side only; never exposed to the browser)."
+    second_brain_term_llm_model: "Model to request from term-llm. Leave blank to use term-llm's default."
+  second_brain:
+    errors:
+      not_configured: "term-llm is not configured. Set the term-llm URL in site settings."
+      request_failed: "Could not reach term-llm: %{message}"

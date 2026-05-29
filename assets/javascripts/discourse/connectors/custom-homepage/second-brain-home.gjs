@@ -1,3 +1,4 @@
+import AskBrain from "../../components/ask-brain";
 import Capture from "../../components/capture";
 import RecentNotes from "../../components/recent-notes";
 
@@ -6,6 +7,7 @@ import RecentNotes from "../../components/recent-notes";
 // outlet renders this connector. A plain component tree — no Blocks API.
 <template>
   <div class="sb-home">
+    <AskBrain />
     <Capture />
     <RecentNotes @limit={{12}} />
   </div>
