@@ -8,14 +8,19 @@
 
 enabled_site_setting :second_brain_enabled
 
-# The homepage UI lives in the companion theme (../theme), which owns the
-# custom-homepage modifier and the Blocks layout. This plugin is the backend
-# "brain": global setting defaults (db/migrate) today, and the term-llm sidecar
-# integration to come.
+register_asset "stylesheets/common/second-brain.scss"
+
+register_svg_icon "plus"
+
+# Take over the homepage from the plugin itself — no separate theme needed.
+# HomepageHelper#resolve returns "custom" when this modifier is truthy, routing
+# the homepage to the `homepage-blocks` Blocks outlet, which our blocks fill
+# (see assets/javascripts/discourse/{blocks,initializers,api-initializers}).
+register_modifier(:custom_homepage_enabled) { true }
 
 after_initialize do
   # Milestone 2+ will hook the term-llm reasoning sidecar here:
   #   - on_post_created -> embed / auto-tag / summarize via term-llm HTTP API
   #   - an "ask my brain" endpoint that proxies RAG queries to term-llm
-  #     (surfaced as an `ask-my-brain` block registered into the homepage)
+  #     (surfaced as an `ask-my-brain` block in the homepage layout)
 end

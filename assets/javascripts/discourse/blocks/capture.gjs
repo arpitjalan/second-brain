@@ -61,7 +61,8 @@ export default class CaptureBlock extends Component {
         {{on "keydown" this.handleKeydown}}
       ></textarea>
       <div class="sb-capture__actions">
-        <span class="sb-capture__hint">Enter to save · Shift+Enter for a new line</span>
+        <span class="sb-capture__hint">Enter to save · Shift+Enter for a new
+          line</span>
         <DButton
           @action={{this.capture}}
           @translatedLabel="Capture"

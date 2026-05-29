@@ -1,0 +1,23 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      discourse:
+        specifier: npm:@discourse/types@*
+        version: '@discourse/types@2026.6.0-06d03da3'
+
+packages:
+
+  '@discourse/types@2026.6.0-06d03da3':
+    resolution: {integrity: sha512-2ER4lt8lFtFNcuyj7Y0Ry8RMLFPBYDfix8TNCh4TKP3FKlCMv+FzvDJ6Ix+CFBTqvh4KJ4uR/oCGYR3Q45yQow==}
+    engines: {node: '>= 20', npm: please-use-pnpm, pnpm: ^10, yarn: please-use-pnpm}
+
+snapshots:
+
+  '@discourse/types@2026.6.0-06d03da3': {}

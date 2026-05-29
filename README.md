@@ -1,53 +1,61 @@
 # Second Brain
 
-Turn Discourse into a personal knowledge organizer — a calm, Notion-flavored
+Turns Discourse into a personal knowledge organizer — a calm, Notion-flavored
 "second brain" rather than a public community. A **note** is a Discourse topic;
 replies are sub-thoughts / annotations.
 
-One repo, two artifacts:
+**One plugin, no separate theme.** The plugin takes over the homepage itself
+(via the `custom_homepage_enabled` modifier) and builds it with the Blocks API,
+ships its own CSS, and holds the backend "brain" (term-llm, to come).
+
+## How the homepage works
 
 ```
-plugin/   Discourse plugin — the backend "brain"
-          · seeds calm global setting defaults (db/migrate)
-          · (M2) term-llm sidecar: embed / auto-tag / "ask my brain"
-          Symlinked into a Discourse checkout at plugins/second-brain.
-
-theme/    Discourse theme — owns the homepage UI
-          · custom_homepage modifier → takes over the homepage route
-          · Blocks API layout: a capture block + a recent-notes block
-          Installed via Admin → Customize → Themes.
+plugin.rb
+  register_modifier(:custom_homepage_enabled) { true }   # HomepageHelper → "custom" route
+                                                          # → renders the homepage-blocks outlet
+assets/javascripts/discourse/
+  blocks/capture.gjs            @block("second-brain-capture")        opens the composer
+  blocks/recent-notes.gjs       @block("second-brain-recent-notes")   latest topics as cards
+  initializers/…register-blocks registerBlock(...)   — BEFORE freeze-block-registry
+  api-initializers/…homepage    renderBlocks("homepage-blocks", [...]) — AFTER freeze
+assets/stylesheets/common/second-brain.scss   Notion-calm BEM styling
 ```
 
-## Why a plugin *and* a theme
+`custom_homepage_enabled` is a **plugin** modifier (`DiscoursePluginRegistry`),
+so a plugin can own the homepage with no theme — confirmed in core
+`lib/homepage_helper.rb`.
 
-The homepage is replaced via Discourse's `custom_homepage` **theme modifier** —
-a plugin cannot set it, so the UI half must be a theme. The reasoning/back end
-(term-llm, setting seeds) is a plugin. They're developed together here.
+## Setting defaults — applied automatically on install
 
-## Architecture
+A migration (`db/migrate/…_configure_second_brain_defaults.rb`) seeds calm
+global settings via `INSERT … ON CONFLICT (name) DO NOTHING`, so a fresh site
+gets them for free and an existing site that already customized one keeps its
+own value:
 
-```
-theme (custom_homepage) ──► homepage-blocks outlet
-                              ├─ second-brain-capture      (opens composer)
-                              └─ second-brain-recent-notes (latest topics)
-plugin ──► global setting seeds today;  (M2) term-llm HTTP sidecar
-                              └─ (M2) ask-my-brain block → RAG over your notes
-```
+| Setting | Value | Why |
+|---|---|---|
+| `enable_chat` | `false` | Removes the CHANNELS sidebar section |
+| `post_menu` | default minus `like` | Drops the Like button (read from the live default, version-safe) |
+| `top_menu` | `latest` | Tidies the nav for the few non-home forum pages |
 
-## Status
+(The welcome banner and forum nav don't render on our custom homepage, so those
+are no longer about the home screen.)
 
-- **M1 — homepage reskin (in progress):** capture + recent-notes blocks on a
-  custom homepage. Built on the **Blocks API**, which is marked `@experimental`
-  in core — expect to track changes.
-- **M2 — term-llm sidecar:** see `plugin/plugin.rb` `after_initialize`.
+## Roadmap
+
+- **M1 — Blocks homepage (in progress).** Capture + recent-notes blocks on a
+  plugin-owned custom homepage. Blocks API is `@experimental` in core — expect
+  to track changes.
+- **M2 — term-llm sidecar.** Run [term-llm](https://term-llm.com) as a local
+  HTTP service; on new note embed / auto-tag / summarize; add an `ask-my-brain`
+  block doing RAG over your notes. Hook points in `plugin.rb` `after_initialize`.
 
 ## Install (dev)
 
-1. **Plugin:** already symlinked into your Discourse checkout at
-   `plugins/second-brain`; it builds with Discourse. `db:migrate` seeds the
-   global setting defaults (see `plugin/README.md`).
-2. **Theme:** Admin → Customize → Themes → Install → *From your device / git*,
-   pointing at the `theme/` directory (or use the `discourse_theme` CLI to
-   watch it during development). Set it as the active theme.
+Symlinked into a Discourse checkout at `plugins/second-brain`; it builds with
+Discourse and `db:migrate` seeds the settings above. Enable
+`second_brain_enabled` and open the homepage.
 
-See `plugin/README.md` and `theme/README.md` for specifics.
+> Display strings are hard-coded for now; make them translatable once the Blocks
+> wiring is verified against a running instance.

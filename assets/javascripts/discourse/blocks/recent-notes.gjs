@@ -52,7 +52,8 @@ export default class RecentNotesBlock extends Component {
           {{/each}}
         </ul>
       {{else}}
-        <p class="sb-recent__status">No notes yet — capture your first thought above.</p>
+        <p class="sb-recent__status">No notes yet — capture your first thought
+          above.</p>
       {{/if}}
     </section>
   </template>
