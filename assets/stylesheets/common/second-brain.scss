@@ -1,15 +1,14 @@
 // =============================================================================
-// Second Brain — homepage (Blocks) styling
-// Notion-flavored: spacious, card-based, calm. The homepage-blocks outlet
-// renders our capture + recent-notes blocks; we style them here.
+// Second Brain — homepage styling
+// Notion-flavored: spacious, card-based, calm. The custom-homepage connector
+// renders our capture + recent-notes components inside .sb-home.
 // =============================================================================
 
 $sb-max-width: 720px;
 $sb-radius: 12px;
 
-// The custom homepage outlet wrapper — center it into a single calm column.
-// Core names it "{outlet}__container" (colons→hyphens) via css.js.
-.homepage-blocks__container {
+// Center the homepage into a single calm column.
+.sb-home {
   max-width: $sb-max-width;
   margin: 40px auto;
   padding-inline: 16px;

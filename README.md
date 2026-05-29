@@ -5,26 +5,29 @@ Turns Discourse into a personal knowledge organizer — a calm, Notion-flavored
 replies are sub-thoughts / annotations.
 
 **One plugin, no separate theme.** The plugin takes over the homepage itself
-(via the `custom_homepage_enabled` modifier) and builds it with the Blocks API,
-ships its own CSS, and holds the backend "brain" (term-llm, to come).
+(via the `custom_homepage_enabled` modifier), renders it with a plain component
+tree behind the `custom-homepage` plugin outlet, ships its own CSS, and holds
+the backend "brain" (term-llm, to come).
 
 ## How the homepage works
 
 ```
 plugin.rb
   register_modifier(:custom_homepage_enabled) { true }   # HomepageHelper → "custom" route
-                                                          # → renders the homepage-blocks outlet
+                                                          # → discovery/custom renders the
+                                                          #   custom-homepage plugin outlet
 assets/javascripts/discourse/
-  blocks/capture.gjs            @block("second-brain:capture")        opens the composer
-  blocks/recent-notes.gjs       @block("second-brain:recent-notes")   latest topics as cards
-  pre-initializers/…register-blocks registerBlock(...)  — app init, BEFORE freeze-block-registry
-  api-initializers/…homepage        renderBlocks("homepage-blocks", [...]) — AFTER freeze
-assets/stylesheets/common/second-brain.scss   Notion-calm BEM styling
+  connectors/custom-homepage/second-brain-home.gjs   the homepage: <Capture/><RecentNotes/>
+  components/capture.gjs        opens the composer (first line → note title)
+  components/recent-notes.gjs   latest topics as cards (store.findFiltered)
+assets/stylesheets/common/second-brain.scss   Notion-calm BEM styling (.sb-home)
 ```
 
 `custom_homepage_enabled` is a **plugin** modifier (`DiscoursePluginRegistry`),
 so a plugin can own the homepage with no theme — confirmed in core
-`lib/homepage_helper.rb`.
+`lib/homepage_helper.rb`. We deliberately use the stable `custom-homepage`
+plugin-outlet approach rather than the `@experimental` Blocks API; the Blocks
+spike is preserved on the `blocks-homepage` branch.
 
 ## Setting defaults — applied automatically on install
 
@@ -44,12 +47,11 @@ are no longer about the home screen.)
 
 ## Roadmap
 
-- **M1 — Blocks homepage (in progress).** Capture + recent-notes blocks on a
-  plugin-owned custom homepage. Blocks API is `@experimental` in core — expect
-  to track changes.
+- **M1 — Homepage (in progress).** Capture + recent-notes on a plugin-owned
+  custom homepage via the stable `custom-homepage` plugin outlet.
 - **M2 — term-llm sidecar.** Run [term-llm](https://term-llm.com) as a local
-  HTTP service; on new note embed / auto-tag / summarize; add an `ask-my-brain`
-  block doing RAG over your notes. Hook points in `plugin.rb` `after_initialize`.
+  HTTP service; on new note embed / auto-tag / summarize; add an `<AskBrain />`
+  component doing RAG over your notes. Hook points in `plugin.rb` `after_initialize`.
 
 ## Install (dev)
 

@@ -2,17 +2,10 @@ import Component from "@glimmer/component";
 import { tracked } from "@glimmer/tracking";
 import { trustHTML } from "@ember/template";
 import { service } from "@ember/service";
-import { block } from "discourse/blocks";
 
 // Recent notes: the latest topics, rendered as calm cards beneath the capture
-// box. `args.limit` (passed from renderBlocks) caps how many we show.
-@block("second-brain:recent-notes", {
-  description: "Your most recent notes as cards",
-  args: {
-    limit: { type: "number", default: 12 },
-  },
-})
-export default class RecentNotesBlock extends Component {
+// box. `@limit` caps how many we show.
+export default class RecentNotes extends Component {
   @service store;
 
   @tracked notes = [];

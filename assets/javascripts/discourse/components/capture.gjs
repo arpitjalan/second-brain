@@ -3,17 +3,13 @@ import { tracked } from "@glimmer/tracking";
 import { on } from "@ember/modifier";
 import { action } from "@ember/object";
 import { service } from "@ember/service";
-import { block } from "discourse/blocks";
 import DButton from "discourse/components/d-button";
 
-// The capture block: a frictionless input that is the hero of the homepage.
+// The capture box: a frictionless input that is the hero of the homepage.
 // The first line of what you type becomes the note (topic) title; the rest
 // prefills the body. Submitting opens the composer, so drafts, validation and
 // uploads all go through Discourse's normal posting pipeline.
-@block("second-brain:capture", {
-  description: "Quick-capture box for new notes",
-})
-export default class CaptureBlock extends Component {
+export default class Capture extends Component {
   @service composer;
 
   @tracked text = "";
