@@ -17,8 +17,8 @@ plugin.rb
 assets/javascripts/discourse/
   blocks/capture.gjs            @block("second-brain-capture")        opens the composer
   blocks/recent-notes.gjs       @block("second-brain-recent-notes")   latest topics as cards
-  initializers/…register-blocks registerBlock(...)   — BEFORE freeze-block-registry
-  api-initializers/…homepage    renderBlocks("homepage-blocks", [...]) — AFTER freeze
+  pre-initializers/…register-blocks registerBlock(...)  — app init, BEFORE freeze-block-registry
+  api-initializers/…homepage        renderBlocks("homepage-blocks", [...]) — AFTER freeze
 assets/stylesheets/common/second-brain.scss   Notion-calm BEM styling
 ```
 
