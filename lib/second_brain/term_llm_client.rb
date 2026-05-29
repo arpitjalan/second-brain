@@ -18,9 +18,26 @@ module ::SecondBrain
       SiteSetting.second_brain_term_llm_url.present?
     end
 
-    # Non-streaming completion via /v1/chat/completions. `messages` is an array
-    # of { role:, content: } hashes (the conversation so far). Streaming and the
-    # richer /v1/responses agentic path (web search, widgets) build on this.
+    # Agentic, non-streaming reply via /v1/responses with server tools enabled,
+    # so term-llm can web-search (and use its other tools) before answering.
+    # `messages` is an array of { role:, content: } hashes (the conversation).
+    # This is what the chat bot uses. (Streaming builds on this later.)
+    def respond(messages)
+      raise NotConfigured if SiteSetting.second_brain_term_llm_url.blank?
+
+      body = {
+        input: messages.map { |m| { type: "message", role: m[:role], content: m[:content] } },
+        include_server_tools: true,
+        stream: false,
+      }
+      model = SiteSetting.second_brain_term_llm_model
+      body[:model] = model if model.present?
+
+      extract_output_text(post_json("/v1/responses", body))
+    end
+
+    # Simpler non-agentic completion via /v1/chat/completions (no server tools).
+    # Kept for the legacy homepage proxy on `main`.
     def complete(messages)
       raise NotConfigured if SiteSetting.second_brain_term_llm_url.blank?
 
@@ -33,6 +50,20 @@ module ::SecondBrain
     end
 
     private
+
+    # /v1/responses returns output[] items; collect text from message items.
+    def extract_output_text(response)
+      Array(response["output"])
+        .filter_map do |item|
+          next unless item["type"] == "message"
+
+          Array(item["content"])
+            .filter_map { |part| part["text"] if part["type"] == "output_text" }
+            .join
+        end
+        .join("\n")
+        .strip
+    end
 
     def base_url
       SiteSetting.second_brain_term_llm_url.to_s.sub(%r{/+\z}, "")

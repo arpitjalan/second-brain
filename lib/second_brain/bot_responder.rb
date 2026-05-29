@@ -30,7 +30,8 @@ module ::SecondBrain
       messages = build_messages
       return if messages.empty?
 
-      answer = TermLlmClient.new.complete(messages).to_s.strip
+      # Agentic reply: term-llm may web-search / use tools before answering.
+      answer = TermLlmClient.new.respond(messages).to_s.strip
       return if answer.blank?
 
       PostCreator.create!(Bot.user, topic_id: @topic.id, raw: answer, skip_validations: true)
