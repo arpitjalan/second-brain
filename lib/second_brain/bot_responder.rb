@@ -53,7 +53,9 @@ module ::SecondBrain
             .stream_respond(messages) do |accumulated|
               now = monotonic
               if now - last_update >= STREAM_THROTTLE && accumulated.strip.present?
-                stream_update(placeholder, accumulated)
+                # Live paint only — no DB write, no refetch. The client paints
+                # this HTML into the post's .cooked element.
+                publish_stream(placeholder, accumulated, done: false)
                 last_update = now
               end
             end
@@ -64,7 +66,15 @@ module ::SecondBrain
       end
 
       final = I18n.t("second_brain.empty_reply") if final.blank?
-      finalize_reply(placeholder, final)
+
+      # Persist the final answer once (no per-token revisions), then tell the
+      # client streaming is done; a single :revised lets non-streaming viewers
+      # (and other participants) pick up the final post normally.
+      placeholder.update_columns(raw: final)
+      placeholder.rebake!
+      publish_stream(placeholder, final, done: true)
+      placeholder.publish_change_to_clients!(:revised)
+
       maybe_title!(messages)
     end
 
@@ -74,22 +84,20 @@ module ::SecondBrain
       Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
 
-    # Fast intermediate update during streaming: write the partial without
-    # creating a revision, then notify viewers via Discourse's topic channel.
-    def stream_update(post, raw)
-      post.update_columns(raw: raw, cooked: PrettyText.cook(raw))
-      post.publish_change_to_clients!(:revised)
+    # Publish a partial/final cooked chunk to the chat's participants only
+    # (scoped via user_ids), on a dedicated channel the client paints from.
+    def publish_stream(post, raw, done:)
+      MessageBus.publish(
+        "/second-brain/stream",
+        { post_id: post.id, html: PrettyText.cook(raw), done: done },
+        user_ids: stream_user_ids,
+      )
     rescue => e
-      Rails.logger.warn("second-brain: stream update failed: #{e.message}")
+      Rails.logger.warn("second-brain: stream publish failed: #{e.message}")
     end
 
-    # Final content: bake properly (oneboxes, reindex) and notify viewers.
-    def finalize_reply(post, raw)
-      post.update_columns(raw: raw)
-      post.rebake!
-      post.publish_change_to_clients!(:revised)
-    rescue => e
-      Rails.logger.warn("second-brain: finalize failed: #{e.message}")
+    def stream_user_ids
+      @stream_user_ids ||= @topic.topic_allowed_users.pluck(:user_id)
     end
 
     # Auto-name the chat once, from the first user message (a quick, non-agentic
