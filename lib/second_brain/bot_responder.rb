@@ -30,11 +30,32 @@ module ::SecondBrain
       messages = build_messages
       return if messages.empty?
 
-      # Agentic reply: term-llm may web-search / use tools before answering.
-      answer = TermLlmClient.new.respond(messages).to_s.strip
-      return if answer.blank?
+      # Post a placeholder immediately so the user sees the bot is replying
+      # (this is also the post we'll stream into later); then fill it in.
+      placeholder =
+        PostCreator.create!(
+          Bot.user,
+          topic_id: @topic.id,
+          raw: I18n.t("second_brain.thinking"),
+          skip_validations: true,
+        )
 
-      PostCreator.create!(Bot.user, topic_id: @topic.id, raw: answer, skip_validations: true)
+      begin
+        # Agentic reply: term-llm may web-search / use tools before answering.
+        answer = TermLlmClient.new.respond(messages).to_s.strip
+        answer = I18n.t("second_brain.empty_reply") if answer.blank?
+      rescue TermLlmClient::Error => e
+        Rails.logger.warn("second-brain: reply failed: #{e.message}")
+        answer = I18n.t("second_brain.errors.reply_failed")
+      end
+
+      PostRevisor.new(placeholder, @topic).revise!(
+        Bot.user,
+        { raw: answer },
+        skip_validations: true,
+        bypass_bump: true,
+      )
+
       maybe_title!(messages)
     end
 
