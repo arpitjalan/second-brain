@@ -71,9 +71,12 @@ ln -s ~/work/second-brain ~/discourse/plugins/second-brain
 ### 2. Wire it up (one command)
 
 ```bash
-cd ~/work/second-brain && scripts/setup-local-dev.sh
+cd ~/work/second-brain && scripts/setup-local-dev.sh          # agent "stan" (default)
+cd ~/work/second-brain && scripts/setup-local-dev.sh john     # a differently-named agent
 ```
-This discovers the stan container + docker network, points the plugin at local stan,
+The agent name is an argument (defaults to `stan`) and drives both the container it
+talks to and the Discourse bot username, so nothing is pinned to one name.
+This discovers the agent's container + docker network, points the plugin at local stan,
 makes the bot an admin with a Discourse API key, installs the `discourse` skill +
 credentials into stan, wires the container→host path, and verifies the round-trip.
 The script is **OS-aware**: on Linux it starts the host forwarder and **prints one

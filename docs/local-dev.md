@@ -50,14 +50,18 @@ The two directions have *different* addressing problems, so set them up separate
 > neither. The scripted setup (`scripts/setup-local-dev.sh`) detects this for you; the
 > manual steps below call it out where it matters.
 
-Set a couple of shell vars you'll reuse (adjust the container name to your `docker ps`):
+Throughout, **`stan` is just the default agent/bot name** — everything is keyed off
+the `AGENT` var below, so set it to whatever your agent is called (`john`, `jarvis`,
+…) and the rest follows. (The scripted setup takes it as an argument:
+`scripts/setup-local-dev.sh john`.) Set a couple of shell vars you'll reuse:
 
 ```bash
-STAN=term-llm-contain-stan-app-1          # your stan container name
-NET=$(docker inspect "$STAN" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}')
+AGENT=stan                                # your agent / bot name (john, jarvis, …)
+CONTAINER=$(docker ps --format '{{.Names}}' | grep -E "contain-${AGENT}.*app" | head -1)
+NET=$(docker inspect "$CONTAINER" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}')
 GW=$(docker network inspect "$NET" --format '{{(index .IPAM.Config 0).Gateway}}')   # e.g. 172.18.0.1
 SUBNET=$(docker network inspect "$NET" --format '{{(index .IPAM.Config 0).Subnet}}') # e.g. 172.18.0.0/16
-echo "stan=$STAN  gateway=$GW  subnet=$SUBNET"
+echo "agent=$AGENT  container=$CONTAINER  gateway=$GW  subnet=$SUBNET"
 
 # How the container reaches the host (used in B3/B4):
 case "$(uname -s)" in
@@ -76,7 +80,7 @@ echo "container-reaches-host-via=$CONTAINER_HOST"
 The plugin authenticates to stan with stan's `WEB_TOKEN`:
 
 ```bash
-docker exec -u agent "$STAN" sh -c 'pid=$(pgrep -f "serve web" | head -1); tr "\0" "\n" < /proc/$pid/environ | grep -E "^WEB_TOKEN=|^WEB_BASE_PATH="'
+docker exec -u agent "$CONTAINER" sh -c 'pid=$(pgrep -f "serve web" | head -1); tr "\0" "\n" < /proc/$pid/environ | grep -E "^WEB_TOKEN=|^WEB_BASE_PATH="'
 ```
 
 ### A2. Point the plugin at local stan
@@ -111,9 +115,9 @@ Four things: a key, the skill, the credentials in stan's env, and a network path
 The bot acts as **itself** with an admin Discourse API key:
 
 ```bash
-cd ~/discourse && bin/rails runner '
-bot = SiteSetting.second_brain_bot_username.presence || "stan"
-u = User.find_by(username_lower: bot.downcase) || SecondBrain::Bot.user
+cd ~/discourse && SB_AGENT="$AGENT" bin/rails runner '
+SiteSetting.second_brain_bot_username = ENV["SB_AGENT"]   # bot = the agent
+u = SecondBrain::Bot.user                                 # find-or-create that user
 u.update!(admin: true) unless u.admin?
 k = ApiKey.create!(description: "second-brain dev forum actions", created_by: Discourse.system_user, user: u)
 puts "BOT_USERNAME=#{u.username}"
@@ -129,8 +133,8 @@ stan discovers skills from `~/.config/term-llm/skills/` inside its persistent
 volume (`/home/agent`). Drop the skill in:
 
 ```bash
-docker exec -u agent "$STAN" mkdir -p /home/agent/.config/term-llm/skills/discourse
-docker exec -i -u agent "$STAN" sh -c 'cat > /home/agent/.config/term-llm/skills/discourse/SKILL.md' \
+docker exec -u agent "$CONTAINER" mkdir -p /home/agent/.config/term-llm/skills/discourse
+docker exec -i -u agent "$CONTAINER" sh -c 'cat > /home/agent/.config/term-llm/skills/discourse/SKILL.md' \
   < ~/work/second-brain/term-llm/skills/discourse/SKILL.md
 ```
 
@@ -145,11 +149,11 @@ every invocation** — the cleanest place to inject env without recreating the
 container. Write it into the volume (use the `$GW` and `API_KEY` from above):
 
 ```bash
-docker exec -i -u agent "$STAN" sh -c 'cat > /home/agent/.zshenv' <<EOF
+docker exec -i -u agent "$CONTAINER" sh -c 'cat > /home/agent/.zshenv' <<EOF
 # second-brain dev: Discourse forum credentials for the discourse skill.
 export DISCOURSE_URL=http://$CONTAINER_HOST:3000
 export DISCOURSE_API_KEY=<API_KEY from B1>
-export DISCOURSE_BOT_USERNAME=stan
+export DISCOURSE_BOT_USERNAME=$AGENT
 EOF
 ```
 
@@ -159,7 +163,7 @@ on **macOS** it's `host.docker.internal`, which Docker Desktop routes to the hos
 loopback directly.
 
 > If your container's shell is not zsh, `.zshenv` won't be read. Check with
-> `docker exec -u agent "$STAN" sh -c 'echo $SHELL'`. For bash you'd instead need
+> `docker exec -u agent "$CONTAINER" sh -c 'echo $SHELL'`. For bash you'd instead need
 > `BASH_ENV` set in the process env (requires recreating the container), or bake the
 > values into the skill. zsh is the default for the `contain` image.
 
@@ -200,28 +204,28 @@ guard — Discourse dev allows all IPs by default, so no host-auth config needed
 cd ~/discourse && bin/rails runner 'SiteSetting.second_brain_forum_actions_enabled = true'
 
 # restart stan so it discovers the skill, then wait for it to come back:
-docker restart "$STAN"
+docker restart "$CONTAINER"
 for i in $(seq 1 20); do
   [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/chat/)" = "200" ] && break; sleep 1
-done; echo "stan up"
+done; echo "$AGENT up"
 ```
 
 ### B6. Verify
 
 ```bash
 # env reaches the shell tool:
-docker exec -u agent "$STAN" zsh -c 'echo "$DISCOURSE_URL  $DISCOURSE_BOT_USERNAME  ${DISCOURSE_API_KEY:0:8}…"'
+docker exec -u agent "$CONTAINER" zsh -c 'echo "$DISCOURSE_URL  $DISCOURSE_BOT_USERNAME  ${DISCOURSE_API_KEY:0:8}…"'
 
 # skill is discovered:
-docker exec -u agent "$STAN" term-llm skills show discourse | head -3
+docker exec -u agent "$CONTAINER" term-llm skills show discourse | head -3
 
 # full path works (container → forwarder → Discourse → API auth):
-docker exec -u agent "$STAN" zsh -c \
+docker exec -u agent "$CONTAINER" zsh -c \
   'curl -sS -w "\nHTTP %{http_code}\n" -H "Api-Key: $DISCOURSE_API_KEY" -H "Api-Username: $DISCOURSE_BOT_USERNAME" "$DISCOURSE_URL/session/current.json"'
 ```
 
-The last command should return stan's session JSON with `"username":"stan"` and
-`HTTP 200`. Then **test for real**: in a chat, ask stan to *"create a forum topic
+The last command should return the bot's session JSON with `"username"` matching your
+agent (e.g. `"stan"`) and `HTTP 200`. Then **test for real**: in a chat, ask the bot to *"create a forum topic
 titled '…' with a short body"*. You'll see the `activate_skill` + `shell` tool
 calls, and the topic appears under `/latest`.
 
@@ -235,13 +239,13 @@ answering, raise it on stan:
 
 ```bash
 # add `response_timeout: 24h` under the `serve:` block of stan's config (idempotent):
-docker exec -i -u agent "$STAN" python3 - <<'PY'
+docker exec -i -u agent "$CONTAINER" python3 - <<'PY'
 p = "/home/agent/.config/term-llm/config.yaml"
 s = open(p).read()
 if "response_timeout" not in s:
     open(p, "w").write(s.replace("serve:\n", "serve:\n    response_timeout: 24h\n", 1))
 PY
-term-llm contain restart stan   # or: docker restart "$STAN"
+term-llm contain restart "$AGENT"   # or: docker restart "$CONTAINER"
 ```
 
 The config lives in stan's persistent volume, so it survives restarts/recreates.
@@ -264,6 +268,12 @@ done Parts A/B the setup just keeps working across restarts.
 
 ## Troubleshooting
 
+- **`stan -> Discourse failed (HTTP 000)`** — `000` means curl couldn't connect at
+  all (not an auth error). The #1 cause is **Discourse not running**: the forwarder
+  has nothing behind it. Check `curl http://127.0.0.1:3000/` on the host — if that
+  fails, `cd ~/discourse && bin/dev` and wait for "Listening on 127.0.0.1:3000", then
+  re-test. (The script's `rails runner` steps still succeed with the web server down,
+  so chat config can look complete while this check fails.)
 - **`Blocked hosts: <name>`** — Rails host-auth rejecting a DNS hostname. Using the
   gateway IP (B3) avoids it. If you use a tunnel hostname instead, allow it in
   `~/discourse/config/environments/development.rb` (e.g.
@@ -271,7 +281,7 @@ done Parts A/B the setup just keeps working across restarts.
 - **Connection times out from the container** — *Linux:* ufw is dropping it (do B4.2)
   or the forwarder is down (`curl http://$GW:3000/` from the host should return 200).
   *macOS:* confirm Discourse is up on `127.0.0.1:3000` and that the runtime provides
-  `host.docker.internal` (`docker exec -u agent "$STAN" getent hosts host.docker.internal`).
+  `host.docker.internal` (`docker exec -u agent "$CONTAINER" getent hosts host.docker.internal`).
 - **`connection refused … [::1]:3000`** (only relevant with a tunnel) — `localhost`
   resolved to IPv6; point the tunnel at `http://127.0.0.1:3000` explicitly.
 - **Skill not found / stan answers instead of acting** — restart stan (skills are

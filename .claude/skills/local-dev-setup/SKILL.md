@@ -11,9 +11,13 @@ directions working locally — chat (Discourse → stan) and forum actions
 
 ## Do this
 
-1. Run the idempotent setup script (safe to re-run):
+1. Run the idempotent setup script (safe to re-run). It takes the **agent name** as
+   an optional first argument (defaults to `stan`) — ask the user which agent if it's
+   not obviously `stan`, since it drives both the container and the Discourse bot
+   username:
    ```bash
-   scripts/setup-local-dev.sh
+   scripts/setup-local-dev.sh          # agent "stan"
+   scripts/setup-local-dev.sh john     # a differently-named agent
    ```
    It discovers the stan container + docker network, reads stan's bearer token,
    makes the bot an admin with a Discourse API key, installs the `discourse` skill
@@ -35,7 +39,7 @@ directions working locally — chat (Discourse → stan) and forum actions
    providing `host.docker.internal` (Docker Desktop does; colima/podman may need
    `--add-host=host.docker.internal:host-gateway`).
 
-3. To rotate the bot's API key: `scripts/setup-local-dev.sh --new-key`.
+3. To rotate the bot's API key: `scripts/setup-local-dev.sh [AGENT] --new-key`.
 
 ## Notes for the agent
 

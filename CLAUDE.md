@@ -17,8 +17,13 @@ Running the full thing locally (chat **and** forum actions) is scripted and
 idempotent:
 
 ```bash
-scripts/setup-local-dev.sh        # set up / repair; --new-key to rotate the bot key
+scripts/setup-local-dev.sh        # set up / repair agent "stan" (the default)
+scripts/setup-local-dev.sh john   # a differently-named agent; --new-key rotates the bot key
 ```
+
+The agent name is the first argument (defaults to `stan`) and drives both the
+container (`term-llm-contain-<agent>-app-1`) and the Discourse bot username — nothing
+is hardcoded to one name.
 
 There's a Claude Code skill (`.claude/skills/local-dev-setup/`) that wraps this —
 use it when asked to "set up local dev", "connect stan", or "get the bot acting on
