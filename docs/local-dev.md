@@ -37,8 +37,9 @@ The two directions have *different* addressing problems, so set them up separate
 
 - Discourse dev checkout running (`cd ~/discourse && bin/dev`) on `localhost:3000`.
 - This plugin symlinked into `~/discourse/plugins/second-brain` and enabled.
-- A local term-llm `contain` instance running (the `stan` container). Confirm with
-  `docker ps` — you should see something like `term-llm-contain-stan-app-1`.
+- A local term-llm `contain` instance running (the `stan` container). Create one with
+  `term-llm contain new stan && term-llm contain start stan`, then confirm with
+  `docker ps` — you should see `term-llm-contain-stan-app-1` (serving `:8081`).
 - `docker` usable without sudo (you're in the `docker` group).
 - `python3` on the host (for the forwarder).
 
@@ -200,6 +201,27 @@ The last command should return stan's session JSON with `"username":"stan"` and
 `HTTP 200`. Then **test for real**: in a chat, ask stan to *"create a forum topic
 titled '…' with a short body"*. You'll see the `activate_skill` + `shell` tool
 calls, and the topic appears under `/latest`.
+
+## Part C — Interactive questions (`ask_user`) timeout
+
+The bot can pause mid-answer to ask structured questions (see
+[ask-user.md](ask-user.md)) — that works out of the box, no setup. But a paused run
+only lives for term-llm's `serve.response_timeout` (**default 30 min**), so a family
+member answering hours later would hit a "this question expired" message. For async
+answering, raise it on stan:
+
+```bash
+# add `response_timeout: 24h` under the `serve:` block of stan's config (idempotent):
+docker exec -i -u agent "$STAN" python3 - <<'PY'
+p = "/home/agent/.config/term-llm/config.yaml"
+s = open(p).read()
+if "response_timeout" not in s:
+    open(p, "w").write(s.replace("serve:\n", "serve:\n    response_timeout: 24h\n", 1))
+PY
+term-llm contain restart stan   # or: docker restart "$STAN"
+```
+
+The config lives in stan's persistent volume, so it survives restarts/recreates.
 
 ---
 
