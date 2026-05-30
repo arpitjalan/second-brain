@@ -130,19 +130,36 @@ module ::SecondBrain
       end
     end
 
+    # Non-essential tool args we hide (matching term-llm's chat UI), so the
+    # summary stays clean — the meaningful arg (command/pattern/path/…) is enough.
+    NOISE_ARG_KEYS = %w[
+      description context_lines max_results multiline files_with_matches
+      include exclude type start_line end_line case_sensitive head_limit
+      offset limit count line_numbers
+    ].freeze
+
+    # Show the important args first.
+    ARG_PRIORITY = %w[command query pattern name prompt url path].freeze
+
     # Render a tool's arguments as labeled lines. Short values go inline; long or
     # multi-line values go in a safely-fenced, truncated code block. This MUST
     # never break markdown — tool args can be whole scripts/heredocs.
     def tool_args_markdown(tool)
       args = tool[:args].is_a?(Hash) ? tool[:args] : {}
-      pairs = args.reject { |k, v| k.to_s == "description" || v.nil? || v.to_s.strip.empty? }
+      pairs =
+        args.reject do |k, v|
+          NOISE_ARG_KEYS.include?(k.to_s) || v.nil? || v.to_s.strip.empty?
+        end
 
       if pairs.empty?
         info = tool[:info].to_s.sub(/\A\(/, "").sub(/\)\z/, "").strip
         return info.present? ? "_#{info}_" : ""
       end
 
-      pairs.map { |k, v| format_arg(k.to_s, v.to_s) }.join("\n")
+      pairs
+        .sort_by { |k, _| [ARG_PRIORITY.index(k.to_s) || 99, k.to_s] }
+        .map { |k, v| format_arg(k.to_s, v.to_s) }
+        .join("\n")
     end
 
     def format_arg(key, value)
