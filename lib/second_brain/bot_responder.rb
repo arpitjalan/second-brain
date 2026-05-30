@@ -102,20 +102,64 @@ module ::SecondBrain
     def tool_summary(tools)
       title =
         if tools.all? { |t| t[:done] }
-          "🔧 ran #{tools.size} tool#{"s" if tools.size != 1}"
+          "🔧 #{tools.size} tool call#{"s" if tools.size != 1}"
         else
           "🔧 working…"
         end
 
-      lines =
-        tools.map do |t|
-          mark = t[:done] ? (t[:success] == false ? "⚠️" : "✓") : "…"
-          label = t[:name].to_s
-          label += " `#{t[:detail]}`" if t[:detail].present?
-          "- #{label} #{mark}"
-        end
+      blocks = tools.map { |t| tool_block(t) }
+      "[details=\"#{title}\"]\n\n#{blocks.join("\n\n")}\n\n[/details]"
+    end
 
-      "[details=\"#{title}\"]\n#{lines.join("\n")}\n[/details]"
+    def tool_block(tool)
+      mark = tool[:done] ? (tool[:success] == false ? "⚠️" : "✓") : "…"
+      lines = ["**#{tool_icon(tool[:name])} #{tool[:name]}** #{mark}"]
+      rendered = tool_args_markdown(tool)
+      lines << rendered if rendered.present?
+      lines.join("\n")
+    end
+
+    def tool_icon(name)
+      case name.to_s
+      when "shell"
+        "💻"
+      when "web_search"
+        "🔍"
+      else
+        "🔧"
+      end
+    end
+
+    # Render a tool's arguments as labeled lines. Short values go inline; long or
+    # multi-line values go in a safely-fenced, truncated code block. This MUST
+    # never break markdown — tool args can be whole scripts/heredocs.
+    def tool_args_markdown(tool)
+      args = tool[:args].is_a?(Hash) ? tool[:args] : {}
+      pairs = args.reject { |k, v| k.to_s == "description" || v.nil? || v.to_s.strip.empty? }
+
+      if pairs.empty?
+        info = tool[:info].to_s.sub(/\A\(/, "").sub(/\)\z/, "").strip
+        return info.present? ? "_#{info}_" : ""
+      end
+
+      pairs.map { |k, v| format_arg(k.to_s, v.to_s) }.join("\n")
+    end
+
+    def format_arg(key, value)
+      value = value.strip
+
+      if !value.include?("\n") && value.length <= 120
+        "#{key}: `#{value.tr("`", "'")}`"
+      else
+        lines = value.lines
+        truncated = lines.length > 30 || value.length > 2000
+        body = lines.first(30).join
+        body = body[0, 2000] if body.length > 2000
+        body = body.rstrip
+        body += "\n… (truncated)" if truncated
+        fence = "`" * [((body.scan(/`+/).map(&:length).max) || 0) + 1, 3].max
+        "#{key}:\n#{fence}\n#{body}\n#{fence}"
+      end
     end
 
     # Publish a partial/final cooked chunk to the chat's participants only

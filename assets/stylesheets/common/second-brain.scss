@@ -46,6 +46,38 @@ body.user-messages-page {
   display: none;
 }
 
+// =============================================================================
+// Tool-call summary (and other collapsibles in posts) — a tidy boxed look.
+// =============================================================================
+.cooked details {
+  border: 1px solid var(--primary-low);
+  border-radius: 8px;
+  background: var(--primary-very-low);
+  padding: 4px 14px;
+  margin: 8px 0 12px;
+
+  > summary {
+    font-weight: 600;
+    cursor: pointer;
+    padding: 6px 0;
+    color: var(--primary-medium);
+  }
+
+  // Each tool row.
+  p {
+    margin: 8px 0;
+  }
+
+  pre,
+  code {
+    font-size: var(--font-down-1);
+  }
+
+  pre {
+    margin: 4px 0 2px;
+  }
+}
+
 .sb-launcher {
   text-align: center;
 

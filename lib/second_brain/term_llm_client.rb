@@ -92,10 +92,12 @@ module ::SecondBrain
                 yield text, tools if block_given?
               when "response.tool_exec.start"
                 j = (JSON.parse(data) rescue {})
+                args = (JSON.parse(j["tool_arguments"].to_s) rescue nil)
                 tools << {
                   call_id: j["call_id"],
                   name: j["tool_name"].to_s,
-                  detail: tool_detail(j["tool_arguments"], j["tool_info"]),
+                  args: args.is_a?(Hash) ? args : {},
+                  info: j["tool_info"].to_s,
                   done: false,
                   success: nil,
                 }
@@ -132,15 +134,6 @@ module ::SecondBrain
     end
 
     private
-
-    # A short human label for a tool call: the command/query/etc., else the
-    # info description term-llm provides.
-    def tool_detail(args_json, info)
-      args = (JSON.parse(args_json) rescue nil) || {}
-      detail = args["command"] || args["query"] || args["url"] || args["path"]
-      detail ||= info.to_s.sub(/\A\(/, "").sub(/\)\z/, "")
-      detail.to_s.strip.presence
-    end
 
     # Parse one SSE frame into [event, data]. Frames are "event:" / "data:" /
     # "id:" lines; comments and ids are ignored.
