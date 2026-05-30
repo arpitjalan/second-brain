@@ -22,8 +22,10 @@ scripts/setup-local-dev.sh        # set up / repair; --new-key to rotate the bot
 
 There's a Claude Code skill (`.claude/skills/local-dev-setup/`) that wraps this —
 use it when asked to "set up local dev", "connect stan", or "get the bot acting on
-the forum". The one step the script can't do is a `sudo ufw` rule (it prints it for
-the user). Full explanation + troubleshooting: `docs/local-dev.md`.
+the forum". The script is OS-aware (Linux: docker gateway + forwarder; macOS:
+`host.docker.internal`). The one step it can't do is a `sudo ufw` rule on **Linux**
+(it prints it for the user); macOS needs no such step. Full explanation +
+troubleshooting: `docs/local-dev.md`.
 
 ## Layout
 

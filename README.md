@@ -54,8 +54,9 @@ fast path.
   term-llm contain start stan      # start it → container term-llm-contain-stan-app-1
   docker ps | grep stan            # confirm it's up (serves :8081)
   ```
-- **Docker usable without sudo** (you're in the `docker` group) and **python3** on
-  the host (for the dev forwarder).
+- **Docker usable without sudo** (you're in the `docker` group). **python3** on the
+  host is needed for the dev forwarder on **Linux only**; macOS (Docker Desktop) uses
+  `host.docker.internal` instead and needs neither the forwarder nor `ufw`.
 
 ### 1. Get the plugin
 
@@ -74,9 +75,11 @@ cd ~/work/second-brain && scripts/setup-local-dev.sh
 ```
 This discovers the stan container + docker network, points the plugin at local stan,
 makes the bot an admin with a Discourse API key, installs the `discourse` skill +
-credentials into stan, starts the host forwarder, and verifies the round-trip. It
-**prints one `sudo ufw` line** it can't run itself — run that, then re-run the script
-(or just re-test). See [docs/local-dev.md](docs/local-dev.md) for what each step does.
+credentials into stan, wires the container→host path, and verifies the round-trip.
+The script is **OS-aware**: on Linux it starts the host forwarder and **prints one
+`sudo ufw` line** it can't run itself (run that, then re-run the script); on macOS it
+uses `host.docker.internal` and skips both. See [docs/local-dev.md](docs/local-dev.md)
+for what each step does.
 
 ### 3. Let questions wait for a human (recommended)
 

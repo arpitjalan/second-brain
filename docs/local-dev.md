@@ -40,8 +40,15 @@ The two directions have *different* addressing problems, so set them up separate
 - A local term-llm `contain` instance running (the `stan` container). Create one with
   `term-llm contain new stan && term-llm contain start stan`, then confirm with
   `docker ps` — you should see `term-llm-contain-stan-app-1` (serving `:8081`).
-- `docker` usable without sudo (you're in the `docker` group).
-- `python3` on the host (for the forwarder).
+- `docker` usable without sudo (you're in the `docker` group). On macOS this is
+  Docker Desktop.
+- `python3` on the host — **Linux only**, for the forwarder. macOS doesn't need it.
+
+> **Linux and macOS both work.** The only thing that differs is the *stan → Discourse*
+> hop (Part B): Linux reaches the host via the docker bridge gateway + a forwarder (and
+> maybe a `ufw` rule); macOS uses Docker Desktop's `host.docker.internal` and needs
+> neither. The scripted setup (`scripts/setup-local-dev.sh`) detects this for you; the
+> manual steps below call it out where it matters.
 
 Set a couple of shell vars you'll reuse (adjust the container name to your `docker ps`):
 
@@ -51,6 +58,13 @@ NET=$(docker inspect "$STAN" --format '{{range $k,$v := .NetworkSettings.Network
 GW=$(docker network inspect "$NET" --format '{{(index .IPAM.Config 0).Gateway}}')   # e.g. 172.18.0.1
 SUBNET=$(docker network inspect "$NET" --format '{{(index .IPAM.Config 0).Subnet}}') # e.g. 172.18.0.0/16
 echo "stan=$STAN  gateway=$GW  subnet=$SUBNET"
+
+# How the container reaches the host (used in B3/B4):
+case "$(uname -s)" in
+  Darwin) CONTAINER_HOST=host.docker.internal ;;  # macOS: Docker Desktop routes to host
+  *)      CONTAINER_HOST="$GW" ;;                  # Linux: bridge gateway (needs forwarder)
+esac
+echo "container-reaches-host-via=$CONTAINER_HOST"
 ```
 
 ---
@@ -133,14 +147,16 @@ container. Write it into the volume (use the `$GW` and `API_KEY` from above):
 ```bash
 docker exec -i -u agent "$STAN" sh -c 'cat > /home/agent/.zshenv' <<EOF
 # second-brain dev: Discourse forum credentials for the discourse skill.
-export DISCOURSE_URL=http://$GW:3000
+export DISCOURSE_URL=http://$CONTAINER_HOST:3000
 export DISCOURSE_API_KEY=<API_KEY from B1>
 export DISCOURSE_BOT_USERNAME=stan
 EOF
 ```
 
-`DISCOURSE_URL` uses the **docker gateway IP** (`$GW`, e.g. `172.18.0.1`), not
-`localhost` — see B4 for why.
+`DISCOURSE_URL` uses `$CONTAINER_HOST` from the prerequisites: on **Linux** that's
+the **docker gateway IP** (`$GW`, e.g. `172.18.0.1`) — not `localhost`, see B4 — and
+on **macOS** it's `host.docker.internal`, which Docker Desktop routes to the host
+loopback directly.
 
 > If your container's shell is not zsh, `.zshenv` won't be read. Check with
 > `docker exec -u agent "$STAN" sh -c 'echo $SHELL'`. For bash you'd instead need
@@ -149,9 +165,16 @@ EOF
 
 ### B4. Make Discourse reachable from the container
 
-This is the fiddly bit. The dev server binds `127.0.0.1:3000` **only**, and the
-container's `localhost` is its own — so stan can't reach Discourse directly. Bridge
-it onto the docker gateway with the forwarder, and open the firewall for it.
+> **macOS: skip this whole section.** Docker Desktop's `host.docker.internal`
+> (already in `$CONTAINER_HOST`) reaches the host's `127.0.0.1:3000` directly — no
+> forwarder, no `ufw`. Go straight to B5. (If you use a non-Desktop runtime like
+> colima or podman, you may need to start the container with
+> `--add-host=host.docker.internal:host-gateway`.)
+
+**Linux only.** This is the fiddly bit. The dev server binds `127.0.0.1:3000`
+**only**, and the container's `localhost` is its own — so stan can't reach Discourse
+directly. Bridge it onto the docker gateway with the forwarder, and open the firewall
+for it.
 
 1. **Run the forwarder on the host** (gateway:3000 → loopback:3000). Keep it running
    for your dev session:
@@ -229,11 +252,13 @@ The config lives in stan's persistent volume, so it survives restarts/recreates.
 
 | Persists across restarts | Re-do each dev session |
 |---|---|
-| `.zshenv`, skill (in stan's volume) | the forwarder process (re-run B4.1) |
+| `.zshenv`, skill (in stan's volume) | the forwarder process — **Linux only** (re-run B4.1) |
 | Discourse settings + API key | — |
-| the ufw rule | — |
+| the ufw rule (Linux) | — |
 
-So day-to-day you usually only restart the forwarder.
+So on Linux you usually only restart the forwarder day-to-day. On **macOS** nothing
+in this table is per-session — `host.docker.internal` is always there, so once you've
+done Parts A/B the setup just keeps working across restarts.
 
 ---
 
@@ -243,8 +268,10 @@ So day-to-day you usually only restart the forwarder.
   gateway IP (B3) avoids it. If you use a tunnel hostname instead, allow it in
   `~/discourse/config/environments/development.rb` (e.g.
   `config.hosts << /\.trycloudflare\.com\Z/`) and restart the dev server.
-- **Connection times out from the container** — ufw is dropping it. Do B4.2. Confirm
-  the forwarder is up (`curl http://$GW:3000/` from the host should return 200).
+- **Connection times out from the container** — *Linux:* ufw is dropping it (do B4.2)
+  or the forwarder is down (`curl http://$GW:3000/` from the host should return 200).
+  *macOS:* confirm Discourse is up on `127.0.0.1:3000` and that the runtime provides
+  `host.docker.internal` (`docker exec -u agent "$STAN" getent hosts host.docker.internal`).
 - **`connection refused … [::1]:3000`** (only relevant with a tunnel) — `localhost`
   resolved to IPv6; point the tunnel at `http://127.0.0.1:3000` explicitly.
 - **Skill not found / stan answers instead of acting** — restart stan (skills are

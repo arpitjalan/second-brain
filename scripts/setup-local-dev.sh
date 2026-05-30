@@ -3,8 +3,10 @@
 # Set up local dev: Discourse (host) <-> term-llm "stan" (local docker container),
 # for both chat and forum actions. Idempotent — safe to re-run.
 #
-# Does everything except the one privileged step (a `ufw` rule), which it prints
-# for you to run. See docs/local-dev.md for the full explanation.
+# Works on Linux and macOS. The container->host hop (stan -> Discourse) differs:
+# on Linux it runs a tiny forwarder and may need a `ufw` rule (printed for you);
+# on macOS it uses Docker Desktop's host.docker.internal and needs neither.
+# See docs/local-dev.md for the full explanation.
 #
 # Usage:
 #   scripts/setup-local-dev.sh              # set up / refresh
@@ -28,6 +30,17 @@ NET=$(docker inspect "$STAN" --format '{{range $k,$v := .NetworkSettings.Network
 GW=$(docker network inspect "$NET" --format '{{(index .IPAM.Config 0).Gateway}}')
 SUBNET=$(docker network inspect "$NET" --format '{{(index .IPAM.Config 0).Subnet}}')
 echo "stan=$STAN  net=$NET  gateway=$GW  subnet=$SUBNET"
+
+# Container->host networking differs by OS. On Linux the container reaches the
+# host via the bridge gateway, but only once we forward gateway:3000 ->
+# 127.0.0.1:3000 (Discourse binds loopback). On macOS, Docker Desktop provides
+# host.docker.internal, which routes straight to the host loopback — so no
+# forwarder and no ufw rule are needed there.
+case "$(uname -s)" in
+  Darwin) CONTAINER_HOST="host.docker.internal"; USE_FORWARDER=false ;;
+  *)      CONTAINER_HOST="$GW";                   USE_FORWARDER=true  ;;
+esac
+echo "host-os=$(uname -s)  container-reaches-host-via=$CONTAINER_HOST"
 
 # --- 1. stan's bearer token (for the plugin -> stan direction) -----------------
 say "Reading stan's WEB_TOKEN (chat: Discourse -> stan)"
@@ -69,25 +82,29 @@ docker exec -i -u agent "$STAN" sh -c 'cat > /home/agent/.config/term-llm/skills
 echo "skill installed ($(docker exec -u agent "$STAN" sh -c 'wc -c < /home/agent/.config/term-llm/skills/discourse/SKILL.md') bytes)"
 
 # --- 4. inject credentials into stan's env via .zshenv ------------------------
-say "Writing stan's .zshenv (DISCOURSE_URL via gateway $GW)"
+say "Writing stan's .zshenv (DISCOURSE_URL via $CONTAINER_HOST)"
 docker exec -i -u agent "$STAN" sh -c 'cat > /home/agent/.zshenv' <<EOF
 # second-brain dev: Discourse forum credentials for the discourse skill.
 # Sourced by zsh on every shell-tool invocation. Managed by setup-local-dev.sh.
-export DISCOURSE_URL=http://$GW:3000
+export DISCOURSE_URL=http://$CONTAINER_HOST:3000
 export DISCOURSE_API_KEY=$API_KEY
 export DISCOURSE_BOT_USERNAME=$BOT_USERNAME
 EOF
 echo "ok"
 
-# --- 5. host forwarder so the container can reach Discourse -------------------
-say "Ensuring host forwarder $GW:3000 -> 127.0.0.1:3000"
-if curl -s -o /dev/null -m 2 "http://$GW:3000/"; then
-  echo "already reachable on $GW:3000 (forwarder up)"
+# --- 5. host forwarder so the container can reach Discourse (Linux only) ------
+if [ "$USE_FORWARDER" = true ]; then
+  say "Ensuring host forwarder $GW:3000 -> 127.0.0.1:3000"
+  if curl -s -o /dev/null -m 2 "http://$GW:3000/"; then
+    echo "already reachable on $GW:3000 (forwarder up)"
+  else
+    nohup python3 "$PLUGIN_DIR/scripts/dev-discourse-forwarder.py" "$GW" 3000 127.0.0.1 3000 \
+      > /tmp/sb-fwd.log 2>&1 &
+    sleep 1
+    echo "started forwarder (logs: /tmp/sb-fwd.log)"
+  fi
 else
-  nohup python3 "$PLUGIN_DIR/scripts/dev-discourse-forwarder.py" "$GW" 3000 127.0.0.1 3000 \
-    > /tmp/sb-fwd.log 2>&1 &
-  sleep 1
-  echo "started forwarder (logs: /tmp/sb-fwd.log)"
+  say "Skipping host forwarder (macOS: Docker Desktop routes host.docker.internal -> host)"
 fi
 
 # --- 6. plugin settings: point at local stan + enable forum actions ----------
@@ -117,7 +134,11 @@ if [ "$CODE" = "200" ]; then
   echo "  Try: open a chat with $BOT_USERNAME and ask it to create a topic."
 else
   printf '\n\033[1;33m⚠ Chat is configured, but stan -> Discourse failed (HTTP %s).\033[0m\n' "$CODE"
-  if systemctl is-active --quiet ufw 2>/dev/null; then
+  if [ "$USE_FORWARDER" != true ]; then
+    echo "  macOS: ensure Discourse is up on 127.0.0.1:3000 and that your container"
+    echo "  runtime provides host.docker.internal (Docker Desktop does; colima/podman"
+    echo "  may need --add-host=host.docker.internal:host-gateway on the container)."
+  elif systemctl is-active --quiet ufw 2>/dev/null; then
     echo "  ufw is active and likely dropping the container->host hop. Run (needs sudo):"
     printf '\n    \033[1msudo ufw allow from %s to any port 3000 proto tcp comment '"'"'dev: stan->discourse'"'"'\033[0m\n\n' "$SUBNET"
     echo "  then re-run this script (or just re-test)."

@@ -17,18 +17,23 @@ directions working locally — chat (Discourse → stan) and forum actions
    ```
    It discovers the stan container + docker network, reads stan's bearer token,
    makes the bot an admin with a Discourse API key, installs the `discourse` skill
-   and credentials into stan's volume, starts the host TCP forwarder, points the
+   and credentials into stan's volume, wires the container→host path, points the
    plugin at local stan, enables forum actions, restarts stan, and verifies the
-   `stan → Discourse` path.
+   `stan → Discourse` path. It's **OS-aware** (`uname`): Linux uses the docker
+   gateway + a host forwarder (+ maybe `ufw`); macOS uses `host.docker.internal`
+   and skips both.
 
-2. **The one step the script can't do** (needs sudo, so the user must run it):
-   if the final check fails because `ufw` is dropping the container→host hop, the
-   script prints the exact rule, e.g.
+2. **The one step the script can't do** — *Linux only* (needs sudo, so the user
+   must run it): if the final check fails because `ufw` is dropping the
+   container→host hop, the script prints the exact rule, e.g.
    ```bash
    sudo ufw allow from <SUBNET> to any port 3000 proto tcp comment 'dev: stan->discourse'
    ```
    Ask the user to run it (in Claude Code they can use the `!` prefix), then re-run
-   the script or just re-test.
+   the script or just re-test. On **macOS** there is no such step — if the check
+   fails there, it's Discourse not being up on `127.0.0.1:3000` or the runtime not
+   providing `host.docker.internal` (Docker Desktop does; colima/podman may need
+   `--add-host=host.docker.internal:host-gateway`).
 
 3. To rotate the bot's API key: `scripts/setup-local-dev.sh --new-key`.
 
@@ -36,8 +41,10 @@ directions working locally — chat (Discourse → stan) and forum actions
 
 - Prerequisites: Discourse dev server up on `localhost:3000` with this plugin
   symlinked in, and a local stan `contain` container running (`docker ps`).
-- The forwarder is a **per-session** background process; if `stan → Discourse`
-  breaks later, just re-run the script (it restarts the forwarder if needed).
+- On **Linux** the forwarder is a **per-session** background process; if
+  `stan → Discourse` breaks later, just re-run the script (it restarts the forwarder
+  if needed). On **macOS** there's no forwarder — `host.docker.internal` is always
+  there, so the setup persists across restarts.
 - The script **restarts the stan container** (skills are scanned at startup), so
   avoid running it while the user is mid-chat unless they're okay with a brief blip.
 - Full explanation, troubleshooting, and the remote (DO droplet) variant are in
