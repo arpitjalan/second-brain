@@ -36,6 +36,67 @@ module ::SecondBrain
       extract_output_text(post_json("/v1/responses", body))
     end
 
+    # Streaming agentic reply via /v1/responses (stream: true). Yields the
+    # accumulated text so far on each token delta; returns the final text.
+    # SSE frames look like:
+    #   event: response.output_text.delta
+    #   data: {"delta":"...","output_index":0,"sequence_number":N}
+    def stream_respond(messages)
+      raise NotConfigured if SiteSetting.second_brain_term_llm_url.blank?
+
+      body = {
+        input: messages.map { |m| { type: "message", role: m[:role], content: m[:content] } },
+        include_server_tools: true,
+        stream: true,
+      }
+      model = SiteSetting.second_brain_term_llm_model
+      body[:model] = model if model.present?
+
+      uri = URI.parse("#{base_url}/v1/responses")
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = uri.scheme == "https"
+      http.open_timeout = 10
+      http.read_timeout = 300
+
+      request = Net::HTTP::Post.new(uri)
+      request["Content-Type"] = "application/json"
+      request["Accept"] = "text/event-stream"
+      key = SiteSetting.second_brain_term_llm_api_key
+      request["Authorization"] = "Bearer #{key}" if key.present?
+      request.body = body.to_json
+
+      full = +""
+      buffer = +""
+
+      begin
+        http.request(request) do |response|
+          unless response.is_a?(Net::HTTPSuccess)
+            raise Error, "term-llm returned HTTP #{response.code}"
+          end
+
+          response.read_body do |chunk|
+            buffer << chunk
+            while (index = buffer.index("\n\n"))
+              frame = buffer.slice!(0..index + 1)
+              event, data = parse_sse_frame(frame)
+              next if data.nil? || data == "[DONE]"
+              next unless event == "response.output_text.delta"
+
+              delta = (JSON.parse(data)["delta"] rescue nil)
+              next if delta.nil?
+
+              full << delta
+              yield full if block_given?
+            end
+          end
+        end
+      rescue SocketError, Timeout::Error, Errno::ECONNREFUSED, Errno::EHOSTUNREACH => e
+        raise Error, e.message
+      end
+
+      full.strip
+    end
+
     # Simpler non-agentic completion via /v1/chat/completions (no server tools).
     # Kept for the legacy homepage proxy on `main`.
     def complete(messages)
@@ -50,6 +111,22 @@ module ::SecondBrain
     end
 
     private
+
+    # Parse one SSE frame into [event, data]. Frames are "event:" / "data:" /
+    # "id:" lines; comments and ids are ignored.
+    def parse_sse_frame(frame)
+      event = nil
+      data_lines = []
+      frame.each_line do |line|
+        line = line.chomp
+        if line.start_with?("event:")
+          event = line.delete_prefix("event:").strip
+        elsif line.start_with?("data:")
+          data_lines << line.delete_prefix("data:").strip
+        end
+      end
+      [event, data_lines.empty? ? nil : data_lines.join("\n")]
+    end
 
     # /v1/responses returns output[] items; collect text from message items.
     def extract_output_text(response)

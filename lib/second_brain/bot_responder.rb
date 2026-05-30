@@ -24,14 +24,17 @@ module ::SecondBrain
       @topic = post.topic
     end
 
+    # Minimum seconds between live post updates while streaming.
+    STREAM_THROTTLE = 0.6
+
     def respond!
       return unless @topic&.private_message?
 
       messages = build_messages
       return if messages.empty?
 
-      # Post a placeholder immediately so the user sees the bot is replying
-      # (this is also the post we'll stream into later); then fill it in.
+      # Post a placeholder immediately so the user sees the bot is replying;
+      # we then stream term-llm's answer into this same post.
       placeholder =
         PostCreator.create!(
           Bot.user,
@@ -40,26 +43,54 @@ module ::SecondBrain
           skip_validations: true,
         )
 
+      final = +""
+      last_update = monotonic
+
       begin
-        # Agentic reply: term-llm may web-search / use tools before answering.
-        answer = TermLlmClient.new.respond(messages).to_s.strip
-        answer = I18n.t("second_brain.empty_reply") if answer.blank?
+        final =
+          TermLlmClient
+            .new
+            .stream_respond(messages) do |accumulated|
+              now = monotonic
+              if now - last_update >= STREAM_THROTTLE && accumulated.strip.present?
+                stream_update(placeholder, accumulated)
+                last_update = now
+              end
+            end
+            .to_s
       rescue TermLlmClient::Error => e
         Rails.logger.warn("second-brain: reply failed: #{e.message}")
-        answer = I18n.t("second_brain.errors.reply_failed")
+        final = I18n.t("second_brain.errors.reply_failed")
       end
 
-      PostRevisor.new(placeholder, @topic).revise!(
-        Bot.user,
-        { raw: answer },
-        skip_validations: true,
-        bypass_bump: true,
-      )
-
+      final = I18n.t("second_brain.empty_reply") if final.blank?
+      finalize_reply(placeholder, final)
       maybe_title!(messages)
     end
 
     private
+
+    def monotonic
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    end
+
+    # Fast intermediate update during streaming: write the partial without
+    # creating a revision, then notify viewers via Discourse's topic channel.
+    def stream_update(post, raw)
+      post.update_columns(raw: raw, cooked: PrettyText.cook(raw))
+      post.publish_change_to_clients!(:revised)
+    rescue => e
+      Rails.logger.warn("second-brain: stream update failed: #{e.message}")
+    end
+
+    # Final content: bake properly (oneboxes, reindex) and notify viewers.
+    def finalize_reply(post, raw)
+      post.update_columns(raw: raw)
+      post.rebake!
+      post.publish_change_to_clients!(:revised)
+    rescue => e
+      Rails.logger.warn("second-brain: finalize failed: #{e.message}")
+    end
 
     # Auto-name the chat once, from the first user message (a quick, non-agentic
     # term-llm call). The chat starts with a throwaway title derived from the
