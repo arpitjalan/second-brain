@@ -9,7 +9,12 @@ module ::Jobs
       post = Post.find_by(id: args[:post_id])
       return if post.blank?
 
-      ::SecondBrain::BotResponder.new(post).respond!
+      responder = ::SecondBrain::BotResponder.new(post)
+      if args[:mode].to_s == "resume"
+        responder.resume!
+      else
+        responder.respond!
+      end
     rescue => e
       Rails.logger.warn("second-brain: reply job error: #{e.class}: #{e.message}")
     end

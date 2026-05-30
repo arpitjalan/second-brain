@@ -27,6 +27,12 @@ module ::SecondBrain
     # Minimum seconds between live post updates while streaming.
     STREAM_THROTTLE = 0.6
 
+    # Post custom fields holding the interactive ask_user state. ASK_FIELD is
+    # client-exposed (questions/status/summary); STATE_FIELD is server-only
+    # (session_id/response_id/sequence/pre-prompt text) and never serialized.
+    ASK_FIELD = "second_brain_askuser"
+    STATE_FIELD = "second_brain_askuser_state"
+
     def respond!
       return unless @topic&.private_message?
 
@@ -43,51 +49,152 @@ module ::SecondBrain
           skip_validations: true,
         )
 
-      final_text = +""
-      final_tools = []
-      last_update = monotonic
-      last_tool_sig = nil
+      # A stable session id per chat lets a later request answer/resume an
+      # ask_user prompt (term-llm keys paused runs by session id).
+      session_id = "sb_#{@topic.id}"
+      result =
+        begin
+          stream_and_paint(placeholder, "", []) do |on_update|
+            TermLlmClient.new.stream_respond(messages, session_id: session_id, &on_update)
+          end
+        rescue TermLlmClient::Error => e
+          Rails.logger.warn("second-brain: reply failed: #{e.message}")
+          { text: I18n.t("second_brain.errors.reply_failed"), tools: [], ask_user: nil }
+        end
 
-      begin
-        result =
-          TermLlmClient
-            .new
-            .stream_respond(messages) do |text, tools|
-              now = monotonic
-              tool_sig = tools.map { |t| [t[:name], t[:done]] }
-              # Publish immediately when a tool starts/finishes; throttle text.
-              if tool_sig != last_tool_sig || now - last_update >= STREAM_THROTTLE
-                markdown = render_reply(text, tools)
-                publish_stream(placeholder, markdown, done: false) if markdown.present?
-                last_update = now
-                last_tool_sig = tool_sig
-              end
-            end
-        final_text = result[:text].to_s
-        final_tools = result[:tools] || []
-      rescue TermLlmClient::Error => e
-        Rails.logger.warn("second-brain: reply failed: #{e.message}")
-        final_text = I18n.t("second_brain.errors.reply_failed")
+      conclude(placeholder, session_id, "", [], result, messages)
+    end
+
+    # Resume a chat that paused on an ask_user prompt, after the human answered
+    # (enqueued by the answer controller). Streams the run's continuation — the
+    # events after the prompt — into the same bot post.
+    def resume!
+      return unless @topic&.private_message?
+
+      public_state = parse_json(@post.custom_fields[ASK_FIELD])
+      server_state = parse_json(@post.custom_fields[STATE_FIELD])
+      return if public_state.nil? || server_state.nil?
+      return unless public_state["status"] == "answered"
+
+      response_id = server_state["response_id"].to_s
+      return if response_id.blank?
+
+      session_id = server_state["session_id"]
+      pre_text = server_state["pre_text"].to_s
+      after = server_state["last_seq"].to_i
+
+      result =
+        begin
+          stream_and_paint(@post, pre_text, []) do |on_update|
+            TermLlmClient.new.stream_events(response_id: response_id, after: after, &on_update)
+          end
+        rescue TermLlmClient::Error => e
+          Rails.logger.warn("second-brain: resume failed: #{e.message}")
+          { text: "", tools: [], ask_user: nil }
+        end
+
+      full_text = pre_text + result[:text].to_s
+      tools = result[:tools] || []
+
+      if result[:ask_user]
+        # The continuation asked another question — pause again.
+        pause_for_ask_user(@post, session_id, result, full_text, tools)
+        return
       end
 
-      final = render_reply(final_text, final_tools)
-      final = I18n.t("second_brain.empty_reply") if final.blank?
-
-      # Persist the final answer once (no per-token revisions), then tell the
-      # client streaming is done; a single :revised lets non-streaming viewers
-      # (and other participants) pick up the final post normally.
-      placeholder.update_columns(raw: final)
-      placeholder.rebake!
-      publish_stream(placeholder, final, done: true)
-      placeholder.publish_change_to_clients!(:revised)
-
-      maybe_title!(messages)
+      finalize(@post, full_text, tools)
+      public_state["status"] = "done"
+      @post.custom_fields[ASK_FIELD] = public_state.to_json
+      @post.save_custom_fields(true)
+      maybe_title!(build_messages)
     end
 
     private
 
     def monotonic
       Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    end
+
+    # Stream a term-llm call into `post`, painting the (optionally seeded) reply
+    # as it accumulates. `seed_text`/`seed_tools` prefix a resumed continuation
+    # with the text/tools produced before the ask_user pause. Yields an on_update
+    # proc to the block, which invokes the actual streaming client method.
+    def stream_and_paint(post, seed_text, seed_tools)
+      last_update = monotonic
+      last_tool_sig = nil
+      on_update =
+        proc do |text, tools|
+          full_text = seed_text.to_s + text.to_s
+          all_tools = seed_tools + tools
+          now = monotonic
+          tool_sig = all_tools.map { |t| [t[:name], t[:done]] }
+          if tool_sig != last_tool_sig || now - last_update >= STREAM_THROTTLE
+            markdown = render_reply(full_text, all_tools)
+            publish_stream(post, markdown, done: false) if markdown.present?
+            last_update = now
+            last_tool_sig = tool_sig
+          end
+        end
+      yield on_update
+    end
+
+    # Either pause for an ask_user prompt or finalize the reply + title the chat.
+    def conclude(post, session_id, seed_text, seed_tools, result, messages)
+      full_text = seed_text.to_s + result[:text].to_s
+      tools = seed_tools + (result[:tools] || [])
+      if result[:ask_user]
+        pause_for_ask_user(post, session_id, result, full_text, tools)
+      else
+        finalize(post, full_text, tools)
+        maybe_title!(messages)
+      end
+    end
+
+    # Persist the question set + run state on the post and refresh clients once so
+    # the interactive form renders (client-side, from the serialized ASK_FIELD).
+    def pause_for_ask_user(post, session_id, result, pre_text, pre_tools)
+      au = result[:ask_user] || {}
+      public_state = {
+        "call_id" => au[:call_id],
+        "status" => "pending",
+        "questions" => au[:questions] || [],
+      }
+      server_state = {
+        "session_id" => session_id,
+        "response_id" => result[:response_id],
+        "last_seq" => result[:last_seq],
+        "pre_text" => pre_text,
+      }
+
+      body = render_reply(pre_text, pre_tools)
+      body = I18n.t("second_brain.askuser.waiting") if body.blank?
+      post.update_columns(raw: body)
+      post.rebake!
+      post.custom_fields[ASK_FIELD] = public_state.to_json
+      post.custom_fields[STATE_FIELD] = server_state.to_json
+      post.save_custom_fields(true)
+
+      # One-time refresh: clients refetch the post, now carrying the serialized
+      # question set, and render the interactive form.
+      publish_stream(post, body, done: true)
+      post.publish_change_to_clients!(:revised)
+    end
+
+    # Persist the final answer once and tell clients streaming is done.
+    def finalize(post, text, tools)
+      final = render_reply(text, tools)
+      final = I18n.t("second_brain.empty_reply") if final.blank?
+      post.update_columns(raw: final)
+      post.rebake!
+      publish_stream(post, final, done: true)
+      post.publish_change_to_clients!(:revised)
+    end
+
+    def parse_json(raw)
+      return nil if raw.blank?
+      JSON.parse(raw)
+    rescue JSON::ParserError
+      nil
     end
 
     # Reply markdown: a collapsible tool-call summary (when tools ran) above the

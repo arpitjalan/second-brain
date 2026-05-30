@@ -178,3 +178,116 @@ body.archetype-private_message {
 .sb-chat-reply {
   margin: 16px 0 8px;
 }
+
+// =============================================================================
+// Interactive ask_user prompt — stan pauses to ask the user structured
+// questions; the form renders inline in stan's post.
+// =============================================================================
+.sb-askuser {
+  margin: 10px 0 4px;
+
+  &__q {
+    border: 1px solid var(--primary-low);
+    border-radius: 12px;
+    background: var(--primary-very-low);
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+
+  &__step {
+    display: block;
+    font-size: var(--font-down-2);
+    color: var(--primary-medium);
+    margin-bottom: 4px;
+  }
+
+  &__header {
+    display: inline-block;
+    font-size: var(--font-down-2);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--tertiary);
+    margin-bottom: 4px;
+  }
+
+  &__question {
+    font-weight: 600;
+    margin: 2px 0 10px;
+  }
+
+  &__opt {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--secondary);
+    }
+
+    input {
+      margin-top: 3px;
+      flex-shrink: 0;
+    }
+  }
+
+  &__opt-text {
+    display: flex;
+    flex-direction: column;
+
+    small {
+      color: var(--primary-medium);
+      line-height: 1.35;
+    }
+  }
+
+  &__other {
+    width: 100%;
+    margin: 4px 0 0;
+    border: 1px solid var(--primary-low);
+    border-radius: 8px;
+    padding: 8px 10px;
+    resize: vertical;
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 4px;
+  }
+
+  &__error {
+    color: var(--danger);
+    font-size: var(--font-down-1);
+    margin-right: auto;
+  }
+
+  &__sent {
+    color: var(--primary-medium);
+    font-style: italic;
+  }
+
+  &__summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--success);
+    font-size: var(--font-down-1);
+
+    .d-icon {
+      color: var(--success);
+    }
+  }
+
+  &__expired {
+    color: var(--primary-medium);
+    font-style: italic;
+    font-size: var(--font-down-1);
+  }
+}

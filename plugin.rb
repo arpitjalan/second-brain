@@ -13,6 +13,7 @@ register_asset "stylesheets/common/second-brain.scss"
 register_svg_icon "paper-plane"
 register_svg_icon "globe"
 register_svg_icon "puzzle-piece"
+register_svg_icon "check"
 
 # Take over the homepage from the plugin itself — no separate theme needed.
 # HomepageHelper#resolve returns "custom" when this modifier is truthy, routing
@@ -39,11 +40,31 @@ after_initialize do
   # the bot replies with term-llm's answer (off-request, in a job).
   on(:post_created) { |post| SecondBrain::BotResponder.maybe_respond(post) }
 
+  # Interactive ask_user state on the bot's post. The public field (questions /
+  # status / summary) is exposed to the client to render the form; the state
+  # field (session_id / response_id / sequence / pre-prompt text) is server-only.
+  register_post_custom_field_type("second_brain_askuser", :string)
+  register_post_custom_field_type("second_brain_askuser_state", :string)
+
+  # Expose only the public ask_user field to the client (preloaded in topic
+  # views via the allowlister), parsed to an object the form renderer reads.
+  topic_view_post_custom_fields_allowlister { |_user, _topic| ["second_brain_askuser"] }
+
+  # Works in both paths: topic-view loads (preloaded via the allowlister) and the
+  # single-post `:revised` refetch (no topic_view → object.custom_fields).
+  add_to_serializer(
+    :post,
+    :second_brain_askuser,
+    include_condition: -> { post_custom_fields.key?("second_brain_askuser") },
+  ) { JSON.parse(post_custom_fields["second_brain_askuser"]) rescue nil }
+
   Discourse::Application.routes.append do
     # Start a chat from a single message (frictionless homepage box).
     post "/second-brain/chats" => "second_brain/chats#create"
     # Turn a private chat into a public topic.
     post "/second-brain/chats/:topic_id/make_public" => "second_brain/chats#make_public"
+    # Answer a pending ask_user prompt (resumes the paused run).
+    post "/second-brain/answer" => "second_brain/chats#answer"
     # List the family's term-llm widgets (for the sidebar).
     get "/second-brain/list-widgets" => "second_brain/widgets#index"
     # Proxy term-llm widget pages/assets (with the Bearer token, server-side).
