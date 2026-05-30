@@ -112,6 +112,12 @@ function renderForm(container, post, data) {
 
   const error = document.createElement("div");
   error.className = "sb-askuser__error";
+
+  const skip = document.createElement("button");
+  skip.type = "button";
+  skip.className = "btn btn-flat sb-askuser__skip";
+  skip.textContent = "Skip";
+
   const submit = document.createElement("button");
   submit.type = "button";
   submit.className = "btn btn-primary sb-askuser__submit";
@@ -119,10 +125,11 @@ function renderForm(container, post, data) {
 
   const actions = document.createElement("div");
   actions.className = "sb-askuser__actions";
-  actions.append(error, submit);
+  actions.append(error, skip, submit);
   form.appendChild(actions);
 
-  submit.addEventListener("click", async () => {
+  // Build the validated answer payload, or null if a question is unanswered.
+  function buildPayload() {
     const payload = [];
     for (let i = 0; i < questions.length; i++) {
       const question = questions[i];
@@ -130,7 +137,7 @@ function renderForm(container, post, data) {
       if (question.multi_select) {
         if (!answer.list.length) {
           error.textContent = "Please answer every question.";
-          return;
+          return null;
         }
         payload.push({
           question_index: i,
@@ -142,7 +149,7 @@ function renderForm(container, post, data) {
       } else if (answer.selected === "__other__") {
         if (!answer.custom.trim()) {
           error.textContent = "Please type your answer.";
-          return;
+          return null;
         }
         payload.push({
           question_index: i,
@@ -161,13 +168,27 @@ function renderForm(container, post, data) {
         });
       } else {
         error.textContent = "Please answer every question.";
-        return;
+        return null;
+      }
+    }
+    return payload;
+  }
+
+  async function send(cancelled) {
+    let payload = null;
+    if (!cancelled) {
+      payload = buildPayload();
+      if (payload === null) {
+        return; // validation message already shown
       }
     }
 
     error.textContent = "";
     submit.disabled = true;
-    submit.textContent = "Sending…";
+    skip.disabled = true;
+    if (!cancelled) {
+      submit.textContent = "Sending…";
+    }
     try {
       await ajax("/second-brain/answer", {
         type: "POST",
@@ -175,6 +196,7 @@ function renderForm(container, post, data) {
         data: JSON.stringify({
           post_id: post.id,
           call_id: data.call_id,
+          cancelled,
           answers: payload,
         }),
       });
@@ -183,10 +205,13 @@ function renderForm(container, post, data) {
       form.replaceChildren();
       const sent = document.createElement("div");
       sent.className = "sb-askuser__sent";
-      sent.textContent = "Answers sent — stan is continuing…";
+      sent.textContent = cancelled
+        ? "Skipped — stan is continuing…"
+        : "Answers sent — stan is continuing…";
       form.appendChild(sent);
     } catch (e) {
       submit.disabled = false;
+      skip.disabled = false;
       submit.textContent = "Send answers";
       if (e?.jqXHR?.status === 410) {
         error.textContent = "This question expired. Ask stan again to continue.";
@@ -194,7 +219,10 @@ function renderForm(container, post, data) {
         popupAjaxError(e);
       }
     }
-  });
+  }
+
+  submit.addEventListener("click", () => send(false));
+  skip.addEventListener("click", () => send(true));
 
   container.appendChild(form);
 }
@@ -204,9 +232,13 @@ function renderSummary(container, data) {
   chip.className = "sb-askuser__summary";
   chip.innerHTML = iconHTML("check");
   const span = document.createElement("span");
-  span.textContent = data.summary
-    ? `You answered — ${data.summary}`
-    : "Answered";
+  if (data.skipped) {
+    span.textContent = "You skipped this question.";
+  } else if (data.summary) {
+    span.textContent = `You answered — ${data.summary}`;
+  } else {
+    span.textContent = "Answered";
+  }
   chip.appendChild(span);
   container.appendChild(chip);
 }
@@ -273,6 +305,12 @@ export default apiInitializer((api) => {
         `[data-post-id="${msg.post_id}"] .cooked`
       );
       applyAskUser(element, post, msg.askuser);
+      // Gently draw attention to the freshly-asked question.
+      if (msg.askuser.status === "pending") {
+        element
+          ?.querySelector(".sb-askuser")
+          ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
     });
   });
 });

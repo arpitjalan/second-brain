@@ -19,6 +19,11 @@ module ::SecondBrain
     class Expired < Error
     end
 
+    # A reconnect (events?after) can't replay: the run's event buffer evicted the
+    # events we asked for. The resumed continuation is unrecoverable this way.
+    class SnapshotRequired < Error
+    end
+
     def self.configured?
       SiteSetting.second_brain_term_llm_url.present?
     end
@@ -140,6 +145,11 @@ module ::SecondBrain
         catch(:sb_done) do
           http.request(request) do |response|
             unless response.is_a?(Net::HTTPSuccess)
+              # 409 from events?after = replay buffer evicted (unrecoverable here);
+              # everything else is a generic/transient failure.
+              if response.code.to_i == 409
+                raise SnapshotRequired, "replay no longer available (HTTP 409)"
+              end
               raise Error, "term-llm returned HTTP #{response.code}"
             end
 

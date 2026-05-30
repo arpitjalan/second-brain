@@ -59,37 +59,45 @@ module ::SecondBrain
       guardian.ensure_can_see!(post.topic)
       raise Discourse::InvalidAccess unless post.topic&.private_message?
 
-      public_state = parse_state(post, "second_brain_askuser")
-      server_state = parse_state(post, "second_brain_askuser_state")
-      raise Discourse::NotFound if public_state.nil? || server_state.nil?
-      raise Discourse::InvalidAccess unless public_state["status"] == "pending"
-      raise Discourse::InvalidParameters, :call_id unless public_state["call_id"] == params[:call_id]
+      cancelled = ActiveModel::Type::Boolean.new.cast(params[:cancelled])
 
-      answers = build_answers(public_state["questions"] || [], params[:answers])
+      # Serialize concurrent submits (double-tap / two devices) so a late one can't
+      # land a term-llm 409 we'd then mis-stamp as expired, clobbering a real answer.
+      DistributedMutex.synchronize("second-brain-answer-#{post.id}") do
+        public_state = parse_state(post, "second_brain_askuser")
+        server_state = parse_state(post, "second_brain_askuser_state")
+        raise Discourse::NotFound if public_state.nil? || server_state.nil?
+        raise Discourse::InvalidAccess unless public_state["status"] == "pending"
+        raise Discourse::InvalidParameters, :call_id unless public_state["call_id"] == params[:call_id]
 
-      begin
-        result =
-          TermLlmClient.new.submit_ask_user(
-            session_id: server_state["session_id"],
-            call_id: public_state["call_id"],
-            answers: answers,
-          )
-      rescue TermLlmClient::Expired
-        public_state["status"] = "expired"
+        answers = cancelled ? nil : build_answers(public_state["questions"] || [], params[:answers])
+
+        begin
+          result =
+            TermLlmClient.new.submit_ask_user(
+              session_id: server_state["session_id"],
+              call_id: public_state["call_id"],
+              answers: answers,
+              cancelled: cancelled,
+            )
+        rescue TermLlmClient::Expired
+          public_state["status"] = "expired"
+          post.custom_fields["second_brain_askuser"] = public_state.to_json
+          post.save_custom_fields(true)
+          return render json: { status: "expired" }, status: 410
+        rescue TermLlmClient::Error => e
+          return render_json_error e.message, status: 502
+        end
+
+        public_state["status"] = "answered"
+        public_state["summary"] = result["summary"]
+        public_state["skipped"] = true if cancelled
         post.custom_fields["second_brain_askuser"] = public_state.to_json
         post.save_custom_fields(true)
-        return render json: { status: "expired" }, status: 410
-      rescue TermLlmClient::Error => e
-        return render_json_error e.message, status: 502
+
+        Jobs.enqueue(:second_brain_reply, post_id: post.id, mode: "resume")
+        return render json: { status: "ok", summary: result["summary"], skipped: cancelled }
       end
-
-      public_state["status"] = "answered"
-      public_state["summary"] = result["summary"]
-      post.custom_fields["second_brain_askuser"] = public_state.to_json
-      post.save_custom_fields(true)
-
-      Jobs.enqueue(:second_brain_reply, post_id: post.id, mode: "resume")
-      render json: { status: "ok", summary: result["summary"] }
     end
 
     private

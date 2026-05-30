@@ -447,8 +447,9 @@ body.archetype-private_message {
   &__opt {
     display: flex;
     align-items: flex-start;
-    gap: 10px;
-    padding: 8px 10px;
+    gap: 12px;
+    min-height: 44px; // comfortable touch target on phones
+    padding: 11px 14px;
     border: 1px solid transparent;
     border-radius: 8px;
     cursor: pointer;
@@ -494,6 +495,10 @@ body.archetype-private_message {
     color: var(--danger);
     font-size: var(--font-down-1);
     margin-right: auto;
+  }
+
+  &__skip {
+    color: var(--primary-medium);
   }
 
   &__sent {

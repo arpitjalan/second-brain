@@ -87,13 +87,15 @@ module ::SecondBrain
       after = server_state["last_seq"].to_i
 
       publish_cooked(@post, thinking_html(nil), done: false)
+      error = nil
       result =
         begin
           stream_and_paint(@post, pre_text, []) do |on_update|
             TermLlmClient.new.stream_events(response_id: response_id, after: after, &on_update)
           end
         rescue TermLlmClient::Error => e
-          Rails.logger.warn("second-brain: resume failed: #{e.message}")
+          Rails.logger.warn("second-brain: resume failed: #{e.class}: #{e.message}")
+          error = e
           { text: "", tools: [], ask_user: nil }
         end
 
@@ -106,8 +108,17 @@ module ::SecondBrain
         return
       end
 
-      finalize(@post, full_text, tools)
-      public_state["status"] = "done"
+      # Never strand the post silently: if the continuation failed, finalize with
+      # whatever streamed plus a clear note so the user knows to re-ask.
+      if error
+        note = I18n.t("second_brain.askuser.interrupted")
+        body = full_text.strip.present? ? "#{full_text}\n\n#{note}" : note
+        finalize(@post, body, tools)
+        public_state["status"] = "interrupted"
+      else
+        finalize(@post, full_text, tools)
+        public_state["status"] = "done"
+      end
       @post.custom_fields[ASK_FIELD] = public_state.to_json
       @post.save_custom_fields(true)
       maybe_title!(build_messages)
@@ -163,6 +174,15 @@ module ::SecondBrain
     # the interactive form renders (client-side, from the serialized ASK_FIELD).
     def pause_for_ask_user(post, session_id, result, pre_text, pre_tools)
       au = result[:ask_user] || {}
+
+      # Don't clobber a question that's already awaiting the user with a different
+      # one — that would make the first unanswerable. (Defensive; rare.)
+      existing = parse_json(post.custom_fields[ASK_FIELD])
+      if existing && existing["status"] == "pending" && existing["call_id"] != au[:call_id]
+        Rails.logger.warn("second-brain: skipping duplicate ask_user pause on post #{post.id}")
+        return
+      end
+
       public_state = {
         "call_id" => au[:call_id],
         "status" => "pending",
