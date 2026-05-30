@@ -181,8 +181,7 @@ export default class Launcher extends Component {
       </h1>
       <p class="sb-launcher__subtitle">
         Chat privately with
-        {{this.botUsername}}. Press Enter to start — every chat is private by
-        default.
+        {{this.botUsername}}. Every chat is private by default.
       </p>
 
       {{#if this.currentUser}}
