@@ -8,8 +8,8 @@ $sb-max-width: 640px;
 
 // Center the homepage into a single calm column.
 .sb-home {
-  max-width: $sb-max-width;
-  margin: 64px auto;
+  max-width: 720px;
+  margin: 48px auto 72px;
   padding-inline: 16px;
 }
 
@@ -523,4 +523,77 @@ body.archetype-private_message {
     font-style: italic;
     font-size: var(--font-down-1);
   }
+}
+
+// =============================================================================
+// Homepage "living brain" board — recent chats + what the family shared.
+// =============================================================================
+.sb-board {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  margin-top: 40px;
+  text-align: left;
+
+  &__col {
+    min-width: 0;
+  }
+
+  &__heading {
+    font-size: var(--font-down-1);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--primary-medium);
+    margin: 0 0 10px;
+  }
+
+  &__card {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 9px 12px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    color: var(--primary);
+
+    &:hover {
+      background: var(--primary-very-low);
+      border-color: var(--primary-low);
+    }
+  }
+
+  &__title {
+    font-weight: 500;
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__meta {
+    font-size: var(--font-down-2);
+    color: var(--primary-medium);
+  }
+}
+
+@media (width <= 600px) {
+  .sb-board {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+}
+
+// =============================================================================
+// De-forum the chrome — hide forum-y sidebar sections and the Discourse footer
+// credit so the app reads as a private family workspace, not a community.
+// =============================================================================
+.sidebar-section[data-section-name="categories"],
+.sidebar-section[data-section-name="chat-channels"],
+.sidebar-section[data-section-name="chat-dms"] {
+  display: none;
+}
+
+.powered-by-discourse {
+  display: none;
 }

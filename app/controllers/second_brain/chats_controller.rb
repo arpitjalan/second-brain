@@ -47,7 +47,44 @@ module ::SecondBrain
       topic.reload
       raise Discourse::InvalidParameters, :topic if topic.private_message?
 
+      # Mark it so the homepage "Shared by the family" board can list exactly the
+      # chats that were published (not arbitrary forum topics).
+      topic.custom_fields["second_brain_shared"] = true
+      topic.save_custom_fields(true)
+
       render json: { url: topic.relative_url }
+    end
+
+    # Homepage "living brain" board: the member's recent chats with the bot, and
+    # what the family has shared (recent public topics, optionally scoped to the
+    # public category).
+    def home
+      bot_id = Bot.user.id
+
+      recent =
+        Topic
+          .where(archetype: Archetype.private_message, deleted_at: nil)
+          .joins("JOIN topic_allowed_users sb_me ON sb_me.topic_id = topics.id AND sb_me.user_id = #{current_user.id.to_i}")
+          .joins("JOIN topic_allowed_users sb_bot ON sb_bot.topic_id = topics.id AND sb_bot.user_id = #{bot_id.to_i}")
+          .includes(:user)
+          .order(bumped_at: :desc)
+          .limit(6)
+
+      shared =
+        Topic
+          .joins(
+            "JOIN topic_custom_fields sb_shared ON sb_shared.topic_id = topics.id AND sb_shared.name = 'second_brain_shared'",
+          )
+          .where(deleted_at: nil, visible: true)
+          .includes(:user)
+          .order(bumped_at: :desc)
+          .limit(6)
+      shared = shared.select { |t| guardian.can_see?(t) }
+
+      render json: {
+        recent: recent.map { |t| topic_card(t) },
+        shared: shared.map { |t| topic_card(t) },
+      }
     end
 
     # Answer a pending ask_user prompt from the bot. We submit the answers to
@@ -106,6 +143,31 @@ module ::SecondBrain
       line = message.lines.first.to_s.strip
       line = "New chat" if line.blank?
       line.truncate(80)
+    end
+
+    def topic_card(topic)
+      {
+        title: topic.title,
+        url: topic.relative_url,
+        username: topic.user&.username,
+        age: short_age(topic.bumped_at),
+      }
+    end
+
+    # Compact relative age ("2m", "3h", "5d", "2w") for the homepage cards.
+    def short_age(time)
+      return "" if time.nil?
+      secs = (Time.now - time).to_i
+      return "now" if secs < 60
+      mins = secs / 60
+      return "#{mins}m" if mins < 60
+      hrs = mins / 60
+      return "#{hrs}h" if hrs < 24
+      days = hrs / 24
+      return "#{days}d" if days < 7
+      weeks = days / 7
+      return "#{weeks}w" if weeks < 52
+      "#{days / 365}y"
     end
 
     def parse_state(post, field)

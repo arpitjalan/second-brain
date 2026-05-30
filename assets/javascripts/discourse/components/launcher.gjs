@@ -30,6 +30,8 @@ export default class Launcher extends Component {
 
   @tracked message = "";
   @tracked starting = false;
+  @tracked recent = [];
+  @tracked shared = [];
   inputEl = null;
 
   get botUsername() {
@@ -51,6 +53,25 @@ export default class Launcher extends Component {
 
   get myChatsUrl() {
     return `/u/${this.currentUser.username}/messages`;
+  }
+
+  get hasBoard() {
+    return this.recent.length > 0 || this.shared.length > 0;
+  }
+
+  // The "living brain" board: my recent chats + what the family shared.
+  @action
+  async loadBoard() {
+    if (!this.currentUser) {
+      return;
+    }
+    try {
+      const data = await ajax("/second-brain/home");
+      this.recent = data.recent || [];
+      this.shared = data.shared || [];
+    } catch {
+      // Non-fatal — the board just stays empty.
+    }
   }
 
   @action
@@ -105,7 +126,7 @@ export default class Launcher extends Component {
   }
 
   <template>
-    <div class="sb-launcher">
+    <div class="sb-launcher" {{didInsert this.loadBoard}}>
       <h1 class="sb-launcher__title">
         {{#if this.currentUser}}{{this.greeting}}{{else}}Your second brain{{/if}}
       </h1>
@@ -150,6 +171,33 @@ export default class Launcher extends Component {
             </button>
           {{/each}}
         </div>
+
+        {{#if this.hasBoard}}
+          <div class="sb-board">
+            {{#if this.recent.length}}
+              <div class="sb-board__col">
+                <h2 class="sb-board__heading">Your recent chats</h2>
+                {{#each this.recent as |card|}}
+                  <a class="sb-board__card" href={{card.url}}>
+                    <span class="sb-board__title">{{card.title}}</span>
+                    <span class="sb-board__meta">{{card.age}}</span>
+                  </a>
+                {{/each}}
+              </div>
+            {{/if}}
+            {{#if this.shared.length}}
+              <div class="sb-board__col">
+                <h2 class="sb-board__heading">Shared by the family</h2>
+                {{#each this.shared as |card|}}
+                  <a class="sb-board__card" href={{card.url}}>
+                    <span class="sb-board__title">{{card.title}}</span>
+                    <span class="sb-board__meta">{{card.username}} · {{card.age}}</span>
+                  </a>
+                {{/each}}
+              </div>
+            {{/if}}
+          </div>
+        {{/if}}
       {{/if}}
     </div>
   </template>
