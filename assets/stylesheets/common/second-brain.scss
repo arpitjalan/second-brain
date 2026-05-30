@@ -719,6 +719,36 @@ body.archetype-private_message {
   display: none;
 }
 
+// =============================================================================
+// Floating sidebar — a modern "app-shell" panel (adapted from the technique in
+// discourse-mint-theme), tuned to our accent. Detaches from the edges, rounds,
+// and lifts with a soft accent-tinted shadow.
+// =============================================================================
+#main-outlet-wrapper .sidebar-wrapper {
+  margin: 12px 0 12px 12px;
+  border-radius: 16px;
+  background: var(--primary-very-low);
+  border: 1px solid var(--primary-low);
+  box-shadow:
+    0 10px 40px -14px rgb(124 92 255 / 22%),
+    0 2px 10px rgb(0 0 0 / 18%);
+
+  // Sit below the header with matching top/bottom breathing room.
+  top: calc(var(--header-offset, 0px) + 12px);
+  height: calc(100dvh - var(--header-offset, 0px) - 24px);
+  overflow: hidden;
+
+  .sidebar-container {
+    border: none;
+    background: transparent;
+  }
+
+  // The footer (collapse toggle etc.) blends into the floating panel.
+  .sidebar-footer-wrapper {
+    background: transparent;
+  }
+}
+
 // Gentle entrance for the homepage hero.
 @keyframes sb-rise {
   from {
