@@ -3,8 +3,23 @@ import { ajax } from "discourse/lib/ajax";
 import { apiInitializer } from "discourse/lib/api";
 
 // A "Widgets" sidebar section listing the family's term-llm widgets. Each link
-// opens the widget through our authenticated proxy.
+// opens the widget (through our authenticated proxy) in a new tab.
 export default apiInitializer((api) => {
+  // The widget links are same-origin (our proxy), so Discourse's built-in
+  // "external links in new tab" never triggers. Open them in a new tab via a
+  // delegated handler scoped to our section (survives re-renders; guarded so
+  // dev hot-reloads don't stack duplicate listeners).
+  if (!window.__sbWidgetNewTab) {
+    window.__sbWidgetNewTab = true;
+    document.addEventListener("click", (event) => {
+      const link = event.target.closest('a[href*="/second-brain/widgets/"]');
+      if (link?.closest('[data-section-name="second-brain-widgets"]')) {
+        event.preventDefault();
+        window.open(link.href, "_blank", "noopener");
+      }
+    });
+  }
+
   api.addSidebarSection(
     (BaseCustomSidebarSection, BaseCustomSidebarSectionLink) => {
       class WidgetLink extends BaseCustomSidebarSectionLink {
