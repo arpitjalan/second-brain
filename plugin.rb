@@ -13,6 +13,11 @@ register_asset "stylesheets/common/second-brain.scss"
 register_svg_icon "paper-plane"
 register_svg_icon "globe"
 register_svg_icon "puzzle-piece"
+register_svg_icon "arrows-rotate"
+register_svg_icon "up-right-from-square"
+register_svg_icon "expand"
+register_svg_icon "copy"
+register_svg_icon "check"
 
 # Take over the homepage from the plugin itself — no separate theme needed.
 # HomepageHelper#resolve returns "custom" when this modifier is truthy, routing

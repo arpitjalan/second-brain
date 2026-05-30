@@ -43,6 +43,9 @@ module ::SecondBrain
           skip_validations: true,
         )
 
+      # Show a breathing, self-narrating indicator until the answer starts.
+      publish_cooked(placeholder, thinking_html(nil), done: false)
+
       final_text = +""
       final_tools = []
       last_update = monotonic
@@ -57,8 +60,13 @@ module ::SecondBrain
               tool_sig = tools.map { |t| [t[:name], t[:done]] }
               # Publish immediately when a tool starts/finishes; throttle text.
               if tool_sig != last_tool_sig || now - last_update >= STREAM_THROTTLE
-                markdown = render_reply(text, tools)
-                publish_stream(placeholder, markdown, done: false) if markdown.present?
+                if text.strip.present?
+                  markdown = render_reply(text, tools)
+                  publish_stream(placeholder, markdown, done: false) if markdown.present?
+                else
+                  # No answer text yet — name what stan is doing right now.
+                  publish_cooked(placeholder, thinking_html(active_label(tools)), done: false)
+                end
                 last_update = now
                 last_tool_sig = tool_sig
               end
@@ -135,12 +143,23 @@ module ::SecondBrain
       lines.join("\n")
     end
 
+    # Mirror term-llm's web UI tool icons so the chat looks consistent.
     def tool_icon(name)
       case name.to_s
-      when "shell"
+      when "shell", "bash"
         "💻"
+      when "read_file"
+        "📄"
+      when "write_file", "edit_file"
+        "✏️"
       when "web_search"
         "🔍"
+      when "read_url"
+        "🌐"
+      when "image_generate"
+        "🎨"
+      when "spawn_agent"
+        "🤖"
       else
         "🔧"
       end
@@ -195,16 +214,53 @@ module ::SecondBrain
       end
     end
 
-    # Publish a partial/final cooked chunk to the chat's participants only
-    # (scoped via user_ids), on a dedicated channel the client paints from.
+    # Publish a partial/final chunk to the chat's participants only (scoped via
+    # user_ids), on a dedicated channel the client paints from. `publish_stream`
+    # takes markdown (cooked here); `publish_cooked` takes ready HTML (used for
+    # the transient thinking indicator, built directly so its markup survives).
     def publish_stream(post, raw, done:)
+      publish_cooked(post, PrettyText.cook(raw), done: done)
+    end
+
+    def publish_cooked(post, html, done:)
       MessageBus.publish(
         "/second-brain/stream",
-        { post_id: post.id, html: PrettyText.cook(raw), done: done },
+        { post_id: post.id, html: html, done: done },
         user_ids: stream_user_ids,
       )
     rescue => e
       Rails.logger.warn("second-brain: stream publish failed: #{e.message}")
+    end
+
+    # Friendly present-tense verbs for the live "what stan is doing" indicator.
+    TOOL_VERBS = {
+      "web_search" => "Searching the web",
+      "read_url" => "Reading a page",
+      "read_file" => "Reading",
+      "write_file" => "Writing",
+      "edit_file" => "Editing",
+      "shell" => "Running a command",
+      "bash" => "Running a command",
+      "image_generate" => "Creating an image",
+      "spawn_agent" => "Thinking it through",
+    }.freeze
+
+    # Label for the breathing indicator: name the running tool, else "Thinking".
+    def active_label(tools)
+      running = tools.reverse.find { |t| !t[:done] }
+      return "Thinking" if running.nil?
+      TOOL_VERBS[running[:name].to_s] || "Working"
+    end
+
+    # A small animated "stan is working" pill, built as HTML (not markdown) so the
+    # dots + label survive on the client. Transient — never persisted.
+    def thinking_html(label)
+      text = label.presence || "Thinking"
+      dots =
+        "<span class=\"sb-thinking__dots\">" \
+          "<span></span><span></span><span></span></span>"
+      "<div class=\"sb-thinking\">#{dots}" \
+        "<span class=\"sb-thinking__label\">#{ERB::Util.html_escape(text)}</span></div>"
     end
 
     def stream_user_ids
