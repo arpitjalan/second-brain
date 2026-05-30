@@ -23,6 +23,9 @@ Today one term-llm agent ("stan") talks to everyone. We want:
 | Forum power (personal) | Personal agents are **TL4 (non-admin) users** — full create/reply/post on the forum, with their **own user-scoped (non-admin) API key**. (Per-agent dial; admin can come later.) |
 | Privacy (personal) | **Private to owner** — only the owner may message their personal agent. |
 | Launcher | Defaults to **your** agent (else family stan), with a **switcher** to choose another. |
+| Naming | The **owner names their agent** (free choice). That name = its Discourse bot username **and** its term-llm `--agent` name. |
+| Persona / model | **Per agent** — each agent picks its own model + system prompt in its term-llm `agents/<name>/` config. The plugin stops forcing a global model; an agent uses its own default (optional per-agent override in the registry). |
+| Widgets | The sidebar shows **both** family + the user's personal widgets (agent-labeled). The widget proxy is **agent-aware + access-controlled**. |
 
 ## The constraint that shapes this (from term-llm)
 
@@ -50,8 +53,13 @@ Agent = {
   agent_name?     : optional term-llm --agent name (usually == bot username)
   owner_user_id?  : null = shared/family; set = personal (private to that user)
   forum_role      : :admin (family) | :tl4 (personal) | :none
+  model?          : optional per-agent model override (else the agent's own default)
 }
 ```
+
+The owner picks the `bot_user`/`agent_name` (free-form name). Model + persona
+live in that agent's term-llm config (`agents/<name>/agent.yaml` + `system.md`),
+so each personal agent can be a different model/personality — set at provisioning.
 
 ### Registry
 
@@ -87,6 +95,23 @@ Agent = {
   `agent` (bot username) param; default resolved server-side.
 - `#home` "recent chats" matches **any agent bot** the user has chatted with.
 
+### Widgets (agent-aware)
+
+Widgets live in each agent's own container, so the widget layer mirrors the chat
+routing:
+
+- **Sidebar shows both** — `WidgetsController#index` aggregates `/admin/widgets/
+  status` across the agents the user can access (family + their own personal
+  agent), tagging each entry with its agent; the sidebar groups them
+  ("Family" / "Yours").
+- **Agent-aware proxy** — the proxy path encodes the agent
+  (`/second-brain/widgets/<agent>/<path>`); `#show` resolves that agent's
+  `term_llm_url` + token from the registry and proxies there. The redirect-origin
+  SSRF guard is then per-agent.
+- **Access-controlled** — `#index`/`#show` only expose agents the user may use
+  (family + their own), so a user never sees or loads another person's personal
+  widgets.
+
 ## Forum power for personal agents (TL4)
 
 - The personal agent's Discourse user is **TL4, not admin**. Its forum actions
@@ -120,14 +145,16 @@ Phase-1 refactor (behavior-neutral, one agent == today):
 
 - `lib/second_brain/bot.rb` — `Bot.user` (one global) → `Agent.resolve(bot_user|topic)`.
 - New `lib/second_brain/agent.rb` + the registry table/model.
-- `lib/second_brain/term_llm_client.rb` — `TermLlmClient.new` → `TermLlmClient.new(agent)` (per-agent url/token).
+- `lib/second_brain/term_llm_client.rb` — `TermLlmClient.new` → `TermLlmClient.new(agent)` (per-agent url/token; stop forcing the global model).
 - `lib/second_brain/bot_responder.rb` — `maybe_respond` / `respond!` / `ensure_placeholder` / `build_messages` use the chat's `Agent`, not the single `Bot.user`.
 - `app/controllers/second_brain/chats_controller.rb` — `#create` targets the resolved agent + access check; `#home` matches any agent bot.
+- `app/controllers/second_brain/widgets_controller.rb` — `#index`/`#show` resolve the agent (from an `<agent>` path segment) and use its url/token; access-check the agent. (One agent == today.)
 
 Phase-2 (personal agents):
 
 - `scripts/setup-local-dev.sh` — `--owner`, TL4 + user-scoped key, registry insert.
 - Launcher switcher + `agent` param; owner-privacy enforcement.
+- `…/api-initializers/second-brain-widgets-sidebar.js` — list widgets grouped by agent (Family / Yours), agent-scoped iframe srcs.
 
 ## Phased plan
 
