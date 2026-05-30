@@ -8,8 +8,10 @@ import { next } from "@ember/runloop";
 import { service } from "@ember/service";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
+import { getUploadMarkdown } from "discourse/lib/uploads";
 import DiscourseURL from "discourse/lib/url";
 import DButton from "discourse/ui-kit/d-button";
+import SbAttach from "./sb-attach";
 
 // A few tappable starters that pre-fill the box — they teach a non-technical
 // family member what stan can do (research, planning, writing, widgets, Q&A).
@@ -49,6 +51,7 @@ export default class Launcher extends Component {
   @tracked shared = [];
   @tracked boardLoaded = false;
   @tracked boardError = false;
+  @tracked attachments = [];
   inputEl = null;
 
   get botUsername() {
@@ -64,7 +67,9 @@ export default class Launcher extends Component {
         : hour < 18
           ? "Good afternoon"
           : "Good evening";
-    const name = this.currentUser?.name || this.currentUser?.username;
+    // First name only (e.g. "Arpit Jalan" → "Arpit"), falling back to username.
+    const firstName = this.currentUser?.name?.trim().split(/\s+/)[0];
+    const name = firstName || this.currentUser?.username;
     return name ? `${part}, ${name}` : part;
   }
 
@@ -136,11 +141,25 @@ export default class Launcher extends Component {
   }
 
   @action
+  addAttachment(upload) {
+    this.attachments = [...this.attachments, upload];
+  }
+
+  @action
+  removeAttachment(index) {
+    this.attachments = this.attachments.filter((_, i) => i !== index);
+  }
+
+  @action
   async start() {
-    const message = this.message.trim();
-    if (!message || this.starting) {
+    const text = this.message.trim();
+    if ((!text && this.attachments.length === 0) || this.starting) {
       return;
     }
+    // Append the uploaded files as markdown; PostCreator links the upload:// refs.
+    const message = [text, this.attachments.map(getUploadMarkdown).join("\n")]
+      .filter((part) => part && part.trim())
+      .join("\n\n");
 
     this.starting = true;
     try {
@@ -179,8 +198,26 @@ export default class Launcher extends Component {
             {{on "input" this.updateMessage}}
             {{on "keydown" this.handleKeydown}}
           ></textarea>
+          {{#if this.attachments.length}}
+            <div class="sb-attach-files">
+              {{#each this.attachments as |file index|}}
+                <span class="sb-attach__chip">
+                  <span class="sb-attach__name">{{file.original_filename}}</span>
+                  <DButton
+                    @action={{fn this.removeAttachment index}}
+                    @icon="xmark"
+                    @translatedTitle="Remove attachment"
+                    class="sb-attach__remove btn-flat"
+                  />
+                </span>
+              {{/each}}
+            </div>
+          {{/if}}
           <div class="sb-starter__actions">
-            <a class="sb-starter__link" href={{this.myChatsUrl}}>Your chats</a>
+            <span class="sb-starter__left">
+              <SbAttach @onAdd={{this.addAttachment}} @disabled={{this.starting}} />
+              <a class="sb-starter__link" href={{this.myChatsUrl}}>Your chats</a>
+            </span>
             <DButton
               @action={{this.start}}
               @translatedLabel="Start chat"

@@ -18,6 +18,8 @@ register_svg_icon "up-right-from-square"
 register_svg_icon "expand"
 register_svg_icon "copy"
 register_svg_icon "check"
+register_svg_icon "paperclip"
+register_svg_icon "xmark"
 
 # Take over the homepage from the plugin itself — no separate theme needed.
 # HomepageHelper#resolve returns "custom" when this modifier is truthy, routing

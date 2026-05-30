@@ -1,11 +1,14 @@
 import Component from "@glimmer/component";
 import { tracked } from "@glimmer/tracking";
+import { fn } from "@ember/helper";
 import { on } from "@ember/modifier";
 import { action } from "@ember/object";
 import { service } from "@ember/service";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
+import { getUploadMarkdown } from "discourse/lib/uploads";
 import DButton from "discourse/ui-kit/d-button";
+import SbAttach from "../../components/sb-attach";
 
 // A frictionless inline reply box at the bottom of a chat (a PM). Type and
 // send — no composer. The post is created via the API and appended to the
@@ -15,6 +18,7 @@ export default class SecondBrainChatReply extends Component {
 
   @tracked value = "";
   @tracked submitting = false;
+  @tracked attachments = [];
 
   get topic() {
     return this.args.outletArgs.model;
@@ -43,11 +47,25 @@ export default class SecondBrainChatReply extends Component {
   }
 
   @action
+  addAttachment(upload) {
+    this.attachments = [...this.attachments, upload];
+  }
+
+  @action
+  removeAttachment(index) {
+    this.attachments = this.attachments.filter((_, i) => i !== index);
+  }
+
+  @action
   async send() {
-    const raw = this.value.trim();
-    if (!raw || this.submitting) {
+    const text = this.value.trim();
+    if ((!text && this.attachments.length === 0) || this.submitting) {
       return;
     }
+    // Append the uploaded files as markdown; PostCreator links the upload:// refs.
+    const raw = [text, this.attachments.map(getUploadMarkdown).join("\n")]
+      .filter((part) => part && part.trim())
+      .join("\n\n");
 
     this.submitting = true;
     try {
@@ -56,6 +74,7 @@ export default class SecondBrainChatReply extends Component {
         data: { raw, topic_id: this.topic.id },
       });
       this.value = "";
+      this.attachments = [];
       // Append our new post (no-ops if the message bus already added it).
       await this.topic.postStream.triggerNewPostsInStream([post.id], {
         background: false,
@@ -79,8 +98,26 @@ export default class SecondBrainChatReply extends Component {
           {{on "input" this.updateValue}}
           {{on "keydown" this.handleKeydown}}
         ></textarea>
+        {{#if this.attachments.length}}
+          <div class="sb-attach-files">
+            {{#each this.attachments as |file index|}}
+              <span class="sb-attach__chip">
+                <span class="sb-attach__name">{{file.original_filename}}</span>
+                <DButton
+                  @action={{fn this.removeAttachment index}}
+                  @icon="xmark"
+                  @translatedTitle="Remove attachment"
+                  class="sb-attach__remove btn-flat"
+                />
+              </span>
+            {{/each}}
+          </div>
+        {{/if}}
         <div class="sb-starter__actions">
-          <span class="sb-starter__link">Enter to send · Shift+Enter for newline</span>
+          <span class="sb-starter__left">
+            <SbAttach @onAdd={{this.addAttachment}} @disabled={{this.submitting}} />
+            <span class="sb-starter__link">Enter to send · Shift+Enter for newline</span>
+          </span>
           <DButton
             @action={{this.send}}
             @translatedLabel="Send"

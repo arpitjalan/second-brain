@@ -63,11 +63,14 @@ body.user-messages-page {
   }
 }
 
-// Chat/topic lists: the Views column is always 0 here — hide it everywhere.
-.topic-list .views,
-.topic-list th.views,
-.topic-list td.views {
-  display: none;
+// Chat list (the member's messages page): the Views column is always 0 here —
+// hide it. Scoped so we don't strip Views from public/admin topic lists.
+.user-messages-page {
+  .topic-list .views,
+  .topic-list th.views,
+  .topic-list td.views {
+    display: none;
+  }
 }
 
 // =============================================================================
@@ -147,14 +150,21 @@ body.archetype-private_message {
     letter-spacing: -0.02em;
     margin-bottom: 10px;
 
-    // Subtle gradient headline — white fading into the signature accent.
-    background: linear-gradient(
-      135deg,
-      var(--primary) 25%,
-      var(--sb-accent) 130%
-    );
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+    // Solid fallback so the heading is never invisible (forced-colors, print, or
+    // unsupported background-clip).
+    color: var(--primary);
+
+    // Subtle gradient headline — white fading into the signature accent — only
+    // where clipping the gradient to the text is actually supported.
+    @supports (background-clip: text) or (-webkit-background-clip: text) {
+      background: linear-gradient(
+        135deg,
+        var(--primary) 25%,
+        var(--sb-accent) 130%
+      );
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
   }
 
   &__subtitle {
@@ -238,8 +248,82 @@ body.archetype-private_message {
       filter: brightness(1.08);
     }
 
+    // A distinct ring on keyboard focus (border:none gives no affordance otherwise).
+    &:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--sb-accent);
+    }
+
     &:active {
       transform: translateY(1px);
+    }
+  }
+}
+
+// Attach button + uploaded-file chips in the chat composers (launcher + reply).
+.sb-starter__left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sb-attach {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  &__btn.btn-flat {
+    color: var(--primary-medium);
+    padding: 4px;
+
+    &:hover,
+    &:focus {
+      color: var(--sb-accent);
+      background: var(--primary-very-low);
+    }
+  }
+
+  &__status {
+    font-size: var(--font-down-2);
+    color: var(--primary-medium);
+  }
+}
+
+.sb-attach-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+
+  .sb-attach__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 220px;
+    padding: 3px 4px 3px 10px;
+    border: 1px solid var(--primary-low);
+    border-radius: 999px;
+    background: var(--primary-very-low);
+    font-size: var(--font-down-1);
+  }
+
+  .sb-attach__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sb-attach__remove.btn-flat {
+    padding: 2px;
+    color: var(--primary-medium);
+
+    &:hover,
+    &:focus {
+      color: var(--danger);
+    }
+
+    .d-icon {
+      font-size: var(--font-down-2);
     }
   }
 }
@@ -281,6 +365,11 @@ body.archetype-private_message {
       background: rgb(124 92 255 / 12%);
       color: var(--primary);
       transform: translateY(-1px);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--sb-accent);
+      outline-offset: 2px;
     }
 
     &:active {
@@ -388,6 +477,11 @@ body.archetype-private_message {
       color: var(--primary);
     }
 
+    &:focus-visible {
+      outline: 2px solid var(--sb-accent);
+      outline-offset: 1px;
+    }
+
     .d-icon {
       font-size: var(--font-down-2);
     }
@@ -434,9 +528,13 @@ body.archetype-private_message {
 
   &:fullscreen {
     border-radius: 0;
+    display: flex;
+    flex-direction: column;
 
+    // Let the frame fill whatever's left below the bar — no hardcoded bar height.
     .sb-widget-card__frame-wrap {
-      height: calc(100vh - 41px); // viewport minus the bar
+      flex: 1;
+      min-height: 0;
     }
 
     .sb-widget-frame {
@@ -486,6 +584,11 @@ body.archetype-private_message {
 
   &--done {
     color: var(--success);
+    opacity: 1;
+  }
+
+  &--error {
+    color: var(--danger);
     opacity: 1;
   }
 
@@ -618,6 +721,11 @@ body.archetype-private_message {
       background: var(--sb-grad);
       filter: brightness(1.08);
     }
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--sb-accent);
+    }
   }
 
   &__other:focus {
@@ -702,6 +810,11 @@ body.archetype-private_message {
       border-color: var(--sb-accent);
       box-shadow: 0 12px 26px -14px rgb(124 92 255 / 40%);
     }
+
+    &:focus-visible {
+      outline: 2px solid var(--sb-accent);
+      outline-offset: 2px;
+    }
   }
 
   &__title {
@@ -776,9 +889,11 @@ body.archetype-private_message {
   }
 }
 
-// When collapsed, the wrapper stays in the DOM as an empty div (kept for the
-// slide animation) — drop our float decorations so no sliver line remains.
-#main-outlet-wrapper .sidebar-wrapper:not(:has(*)) {
+// When collapsed, the wrapper stays in the DOM (kept for the slide animation) —
+// drop our float decorations so no sliver line remains. Keyed off core's reactive
+// `has-sidebar-page` body class rather than the empty-div DOM shape, which a core
+// change could break.
+body:not(.has-sidebar-page) #main-outlet-wrapper .sidebar-wrapper {
   margin: 0;
   border: none;
   box-shadow: none;
