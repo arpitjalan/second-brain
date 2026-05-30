@@ -17,7 +17,10 @@ function optionRow(question, name, opt, onChange) {
   const input = document.createElement("input");
   input.type = question.multi_select ? "checkbox" : "radio";
   input.name = name;
-  input.value = opt.value;
+  // Real options carry { label, description } (no value); the synthetic "Other"
+  // option carries an explicit value. Multi-select reads input.value, so it must
+  // be the option label.
+  input.value = opt.value ?? opt.label;
   input.addEventListener("change", onChange);
   const text = document.createElement("span");
   text.className = "sb-askuser__opt-text";
