@@ -78,13 +78,15 @@ module ::SecondBrain
     # Widget routes often 3xx (trailing-slash / index normalization); follow the
     # redirects server-side, carrying the token on every hop, so the iframe gets
     # the final 200 — not a "Temporary Redirect" body. Redirects must stay on the
-    # term-llm host (an SSRF guard — never follow a redirect to another host).
+    # exact term-llm origin (an SSRF guard) — pin scheme+host+port, not just host,
+    # so a redirect can't downgrade to http or hop to another port on the same host
+    # and leak the Bearer token there.
     def fetch_following_redirects(uri)
       key = SiteSetting.second_brain_term_llm_api_key
-      allowed_host = uri.host
+      allowed_origin = [uri.scheme, uri.host, uri.port]
 
       5.times do
-        raise Discourse::InvalidAccess if uri.host != allowed_host
+        raise Discourse::InvalidAccess if [uri.scheme, uri.host, uri.port] != allowed_origin
 
         http = Net::HTTP.new(uri.host, uri.port)
         http.use_ssl = uri.scheme == "https"

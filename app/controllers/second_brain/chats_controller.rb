@@ -41,6 +41,12 @@ module ::SecondBrain
       topic = Topic.find_by(id: params[:topic_id])
       raise Discourse::NotFound if topic.blank? || !topic.private_message?
 
+      # Only a *bot chat* may be published — never an arbitrary human-to-human PM
+      # the caller happens to participate in.
+      unless topic.topic_allowed_users.exists?(user_id: Bot.user.id)
+        raise Discourse::InvalidAccess
+      end
+
       guardian.ensure_can_see!(topic)
       unless current_user.staff? || topic.user_id == current_user.id
         raise Discourse::InvalidAccess
@@ -108,7 +114,9 @@ module ::SecondBrain
 
       # Serialize concurrent submits (double-tap / two devices) so a late one can't
       # land a term-llm 409 we'd then mis-stamp as expired, clobbering a real answer.
-      DistributedMutex.synchronize("second-brain-answer-#{post.id}") do
+      # validity > worst-case in-lock budget (term-llm open 10s + read 30s + DB),
+      # so the lock can't auto-expire mid-submit and let a concurrent answer race.
+      DistributedMutex.synchronize("second-brain-answer-#{post.id}", validity: 90) do
         public_state = parse_state(post, "second_brain_askuser")
         server_state = parse_state(post, "second_brain_askuser_state")
         raise Discourse::NotFound if public_state.nil? || server_state.nil?

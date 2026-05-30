@@ -10,6 +10,7 @@ class SecondBrainEnableReactions < ActiveRecord::Migration[7.2]
   end
 
   def down
+    raise ActiveRecord::IrreversibleMigration
   end
 
   private

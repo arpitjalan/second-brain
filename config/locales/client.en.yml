@@ -1,7 +1,0 @@
-en:
-  js:
-    second_brain:
-      capture:
-        placeholder: "Capture a thought…  (first line becomes the note title)"
-        button: "Capture"
-        hint: "Enter to save · Shift+Enter for a new line"

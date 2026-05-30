@@ -7,7 +7,11 @@ import { apiInitializer } from "discourse/lib/api";
 const CYCLE_MS = 10000;
 
 export default apiInitializer(() => {
-  setInterval(() => {
+  // Guard against dev hot-reload (and any re-init) stacking duplicate intervals.
+  if (window.__sbThinkingCycle) {
+    return;
+  }
+  window.__sbThinkingCycle = setInterval(() => {
     document.querySelectorAll(".sb-thinking--cycle").forEach((pill) => {
       const label = pill.querySelector(".sb-thinking__label");
       const words = (pill.dataset.sbWords || "").split("|").filter(Boolean);

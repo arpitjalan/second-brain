@@ -1,6 +1,7 @@
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import { apiInitializer } from "discourse/lib/api";
+import DiscourseURL from "discourse/lib/url";
 
 // Adds a "Make public" button to the footer of a chat (a PM with the bot),
 // shown only to the chat's owner (or staff). It converts the PM into a public
@@ -63,7 +64,7 @@ export default apiInitializer((api) => {
           { type: "POST" }
         );
         // Leave the flag set — we're navigating away to the new public topic.
-        window.location = result.url;
+        DiscourseURL.routeTo(result.url);
       } catch (error) {
         topic.set("sbPublishing", false);
         popupAjaxError(error);

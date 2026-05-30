@@ -112,6 +112,8 @@ function renderForm(container, post, data) {
 
   const error = document.createElement("div");
   error.className = "sb-askuser__error";
+  // Announce validation messages to screen readers (they're set via textContent).
+  error.setAttribute("role", "alert");
 
   const skip = document.createElement("button");
   skip.type = "button";

@@ -48,7 +48,14 @@ export default apiInitializer((api) => {
             button.classList.remove("sb-copy--done");
           }, 1500);
         } catch {
-          // clipboard unavailable (e.g. insecure context) — no-op
+          // Clipboard unavailable (insecure context / denied) — show a brief cue
+          // instead of a dead button.
+          button.innerHTML = iconHTML("xmark");
+          button.classList.add("sb-copy--error");
+          setTimeout(() => {
+            button.innerHTML = iconHTML("copy");
+            button.classList.remove("sb-copy--error");
+          }, 1500);
         }
       });
 

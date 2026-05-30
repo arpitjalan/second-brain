@@ -111,7 +111,7 @@ module ::SecondBrain
     rescue JSON::ParserError => e
       # A 200 with a non-JSON body must NOT silently advance the run as answered.
       raise Error, "invalid JSON from term-llm: #{e.message}"
-    rescue SocketError, Timeout::Error, Errno::ECONNREFUSED, Errno::EHOSTUNREACH => e
+    rescue SocketError, SystemCallError, IOError, Timeout::Error => e
       raise Error, e.message
     end
 
@@ -155,7 +155,9 @@ module ::SecondBrain
             end
 
             response.read_body do |chunk|
-              buffer << chunk
+              # Normalize CRLF so frame-splitting on "\n\n" works regardless of
+              # line endings — a CRLF stream would otherwise never frame and hang.
+              buffer << chunk.gsub("\r\n", "\n")
               while (index = buffer.index("\n\n"))
                 frame = buffer.slice!(0..index + 1)
                 seq, event, data = parse_sse_frame(frame)
@@ -201,7 +203,7 @@ module ::SecondBrain
             end
           end
         end
-      rescue SocketError, Timeout::Error, Errno::ECONNREFUSED, Errno::EHOSTUNREACH => e
+      rescue SocketError, SystemCallError, IOError, Timeout::Error => e
         raise Error, e.message
       end
 
@@ -284,7 +286,7 @@ module ::SecondBrain
       JSON.parse(response.body)
     rescue JSON::ParserError => e
       raise Error, "invalid JSON from term-llm: #{e.message}"
-    rescue SocketError, Timeout::Error, Errno::ECONNREFUSED, Errno::EHOSTUNREACH => e
+    rescue SocketError, SystemCallError, IOError, Timeout::Error => e
       raise Error, e.message
     end
   end
