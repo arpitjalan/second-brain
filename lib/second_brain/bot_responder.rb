@@ -153,7 +153,7 @@ module ::SecondBrain
     NOISE_ARG_KEYS = %w[
       description context_lines max_results multiline files_with_matches
       include exclude type start_line end_line case_sensitive head_limit
-      offset limit count line_numbers
+      offset limit count line_numbers timeout_seconds timeout
     ].freeze
 
     # Show the important args first.
