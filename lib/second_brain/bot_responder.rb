@@ -19,6 +19,16 @@ module ::SecondBrain
       Jobs.enqueue(:second_brain_reply, post_id: post.id)
     end
 
+    # Find-or-create stan's "Thinking…" placeholder in a chat. Called from the
+    # create controller (so the chat is alive the instant the member lands) AND
+    # from the reply job — idempotent on the placeholder's raw, so the two can't
+    # produce duplicates regardless of which runs first.
+    def self.ensure_placeholder(topic)
+      thinking = I18n.t("second_brain.thinking")
+      topic.posts.where(user_id: Bot.user.id, raw: thinking).order(:post_number).last ||
+        PostCreator.create!(Bot.user, topic_id: topic.id, raw: thinking, skip_validations: true)
+    end
+
     def initialize(post)
       @post = post
       @topic = post.topic
@@ -39,15 +49,9 @@ module ::SecondBrain
       messages = build_messages
       return if messages.empty?
 
-      # Post a placeholder immediately so the user sees the bot is replying;
-      # we then stream term-llm's answer into this same post.
-      placeholder =
-        PostCreator.create!(
-          Bot.user,
-          topic_id: @topic.id,
-          raw: I18n.t("second_brain.thinking"),
-          skip_validations: true,
-        )
+      # Reuse the placeholder the create controller already spawned (or make one
+      # if this is a follow-up turn) and stream term-llm's answer into it.
+      placeholder = self.class.ensure_placeholder(@topic)
 
       # Show a breathing, self-narrating indicator until the answer starts.
       publish_cooked(placeholder, thinking_html(nil), done: false)
@@ -451,6 +455,7 @@ module ::SecondBrain
           .filter_map do |user_id, raw|
             content = raw.to_s.strip
             next if content.blank?
+            next if content == I18n.t("second_brain.thinking") # live placeholder
 
             { role: user_id == bot_id ? "assistant" : "user", content: content }
           end

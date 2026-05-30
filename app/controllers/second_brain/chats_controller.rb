@@ -25,6 +25,11 @@ module ::SecondBrain
           skip_validations: true,
         )
 
+      # Spawn stan's "Thinking…" placeholder now so the chat is alive the instant
+      # the member lands in the PM — instead of dead-air until the reply job
+      # (Sidekiq pickup) gets around to creating it.
+      BotResponder.ensure_placeholder(post.topic)
+
       render json: { url: post.topic.relative_url }
     end
 
