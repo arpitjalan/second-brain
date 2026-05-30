@@ -21,16 +21,20 @@ module ::SecondBrain
 
     # Find-or-create stan's "Thinking…" placeholder in a chat. Called from the
     # create controller (so the chat is alive the instant the member lands) AND
-    # from the reply job — idempotent on the placeholder's raw, so the two can't
-    # produce duplicates regardless of which runs first.
+    # from the reply job. The lock makes the find-or-create atomic across the
+    # request/job boundary — without it, the job's SELECT can run before the
+    # controller's INSERT commits, so both create one and the chat ends up with
+    # a second, orphaned "Thinking…" post that never resolves.
     def self.ensure_placeholder(topic)
       thinking = I18n.t("second_brain.thinking")
-      topic
-        .posts
-        .where(user_id: Bot.user.id, raw: thinking)
-        .order(post_number: :desc)
-        .first ||
-        PostCreator.create!(Bot.user, topic_id: topic.id, raw: thinking, skip_validations: true)
+      DistributedMutex.synchronize("second-brain-placeholder-#{topic.id}") do
+        topic
+          .posts
+          .where(user_id: Bot.user.id, raw: thinking)
+          .order(post_number: :desc)
+          .first ||
+          PostCreator.create!(Bot.user, topic_id: topic.id, raw: thinking, skip_validations: true)
+      end
     end
 
     def initialize(post)
@@ -49,6 +53,12 @@ module ::SecondBrain
 
     def respond!
       return unless @topic&.private_message?
+      # A plugin's :post_created handler can be registered more than once (it
+      # accumulates across dev code-reloads), firing maybe_respond — and so this
+      # job — several times for one message. Claim the turn on the triggering
+      # post so exactly one job replies; the rest no-op instead of each calling
+      # term-llm and streaming a duplicate answer.
+      return unless claim_turn!
 
       messages = build_messages
       return if messages.empty?
@@ -136,6 +146,26 @@ module ::SecondBrain
     end
 
     private
+
+    # Atomically mark the triggering post as replied-to. Returns true for the
+    # first caller, false for any duplicate job for the same post. We hit
+    # PostCustomField directly (not @post.custom_fields, which a sibling job may
+    # have cached as empty) so the check sees a concurrent claim immediately.
+    #
+    # The claim is taken up-front (before term-llm), so it's intentionally
+    # non-recoverable: if this job is hard-killed before painting anything, the
+    # turn stays claimed and the message goes unanswered. That's the same
+    # no-retry outcome as before (the job swallows errors and Sidekiq doesn't
+    # retry); a TermLlmClient::Error still resolves the placeholder with the
+    # reply_failed message, so only a process kill in the gap before any output
+    # loses the turn — a negligible window we accept to kill the duplicate-reply.
+    def claim_turn!
+      DistributedMutex.synchronize("second-brain-reply-#{@post.id}") do
+        next false if PostCustomField.exists?(post_id: @post.id, name: "second_brain_replied")
+        PostCustomField.create!(post_id: @post.id, name: "second_brain_replied", value: "t")
+        true
+      end
+    end
 
     def monotonic
       Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -361,7 +391,7 @@ module ::SecondBrain
         body = body[0, 2000] if body.length > 2000
         body = body.rstrip
         body += "\n… (truncated)" if truncated
-        fence = "`" * [((body.scan(/`+/).map(&:length).max) || 0) + 1, 3].max
+        fence = "`" * [(body.scan(/`+/).map(&:length).max || 0) + 1, 3].max
         "#{key}:\n#{fence}\n#{body}\n#{fence}"
       end
     end
