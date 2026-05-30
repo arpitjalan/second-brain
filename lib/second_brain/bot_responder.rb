@@ -174,10 +174,23 @@ module ::SecondBrain
       post.custom_fields[STATE_FIELD] = server_state.to_json
       post.save_custom_fields(true)
 
-      # One-time refresh: clients refetch the post, now carrying the serialized
-      # question set, and render the interactive form.
+      # Live viewers: push the question set so the client renders the form now
+      # (the :revised refetch alone doesn't change cooked, so it wouldn't
+      # re-trigger the decorator). Reload/late-join is covered by the serialized
+      # field + the post decorator.
       publish_stream(post, body, done: true)
+      publish_askuser(post, public_state)
       post.publish_change_to_clients!(:revised)
+    end
+
+    def publish_askuser(post, public_state)
+      MessageBus.publish(
+        "/second-brain/askuser",
+        { post_id: post.id, askuser: public_state },
+        user_ids: stream_user_ids,
+      )
+    rescue => e
+      Rails.logger.warn("second-brain: askuser publish failed: #{e.message}")
     end
 
     # Persist the final answer once and tell clients streaming is done.

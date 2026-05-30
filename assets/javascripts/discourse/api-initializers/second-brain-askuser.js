@@ -1,3 +1,4 @@
+import { next } from "@ember/runloop";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import { apiInitializer } from "discourse/lib/api";
@@ -214,34 +215,61 @@ function renderExpired(container) {
   container.appendChild(note);
 }
 
+// Render (or re-render) the ask_user UI into a post's cooked element. Idempotent
+// per status, so it's safe to call from both the decorator (reload/late-join)
+// and the live MessageBus push.
+function applyAskUser(element, post, data) {
+  if (!element || !post || !data) {
+    return;
+  }
+  if (element.dataset.sbAskStatus === data.status) {
+    return; // already rendered for this status
+  }
+  element.querySelectorAll(":scope > .sb-askuser").forEach((n) => n.remove());
+  element.dataset.sbAskStatus = data.status;
+
+  const container = document.createElement("div");
+  container.className = "sb-askuser";
+  if (data.status === "pending") {
+    renderForm(container, post, data);
+  } else if (data.status === "expired") {
+    renderExpired(container);
+  } else {
+    renderSummary(container, data);
+  }
+  element.appendChild(container);
+}
+
 export default apiInitializer((api) => {
+  // Reload / late-join: the question set is serialized on the post.
   api.decorateCookedElement(
     (element, helper) => {
       const post = helper?.model ?? helper?.getModel?.();
-      const data = post?.second_brain_askuser;
-      if (!data) {
-        return;
-      }
-      // Re-render only when the status changes (pending → answered → done).
-      if (element.dataset.sbAskStatus === data.status) {
-        return;
-      }
-      element
-        .querySelectorAll(":scope > .sb-askuser")
-        .forEach((n) => n.remove());
-      element.dataset.sbAskStatus = data.status;
-
-      const container = document.createElement("div");
-      container.className = "sb-askuser";
-      if (data.status === "pending") {
-        renderForm(container, post, data);
-      } else if (data.status === "expired") {
-        renderExpired(container);
-      } else {
-        renderSummary(container, data);
-      }
-      element.appendChild(container);
+      applyAskUser(element, post, post?.second_brain_askuser);
     },
     { id: "second-brain-askuser", onlyStream: true }
   );
+
+  // Live: the server pushes the question set when the run pauses. The :revised
+  // refetch alone wouldn't re-trigger the decorator (cooked doesn't change), so
+  // we set the field on the model and render the form explicitly — deferred past
+  // the cooked paint so it isn't wiped by a re-render.
+  const messageBus = api.container.lookup("service:message-bus");
+  messageBus?.subscribe("/second-brain/askuser", (msg) => {
+    if (!msg?.post_id || !msg.askuser) {
+      return;
+    }
+    const post = api.container
+      .lookup("controller:topic")
+      ?.model?.postStream?.findLoadedPost?.(msg.post_id);
+    if (post) {
+      post.set("second_brain_askuser", msg.askuser);
+    }
+    next(() => {
+      const element = document.querySelector(
+        `[data-post-id="${msg.post_id}"] .cooked`
+      );
+      applyAskUser(element, post, msg.askuser);
+    });
+  });
 });
