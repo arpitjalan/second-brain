@@ -13,6 +13,39 @@ $sb-max-width: 640px;
   padding-inline: 16px;
 }
 
+// =============================================================================
+// "Your chats" — trim the stock messages page into a clean, personal list
+// (scoped to body.user-messages-page so other pages are untouched).
+// =============================================================================
+body.user-messages-page {
+  // Drop the profile header (big avatar, username, Admin/Expand) and the
+  // forum-y profile tab bar (Summary / Activity / Badges / …).
+  .user-main .details,
+  .user-main .controls,
+  .user-navigation:not(.user-navigation-secondary) {
+    display: none;
+  }
+
+  // Secondary nav: keep just "New message"; drop the inbox dropdown and the
+  // Latest / Sent / New / Unread / Archive filters a family doesn't need.
+  .user-navigation-secondary {
+    border: none;
+    margin-top: 8px;
+
+    .category-breadcrumb,
+    .messages-nav {
+      display: none;
+    }
+  }
+}
+
+// Chat/topic lists: the Views column is always 0 here — hide it everywhere.
+.topic-list .views,
+.topic-list th.views,
+.topic-list td.views {
+  display: none;
+}
+
 .sb-launcher {
   text-align: center;
 
