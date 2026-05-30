@@ -8,16 +8,24 @@ export default apiInitializer((api) => {
   // The widget links are same-origin (our proxy), so Discourse's built-in
   // "external links in new tab" never triggers. Open them in a new tab via a
   // delegated handler scoped to our section (survives re-renders; guarded so
-  // dev hot-reloads don't stack duplicate listeners).
+  // dev hot-reloads don't stack duplicate listeners). Runs in the CAPTURE phase
+  // so preventDefault lands before Discourse's bubble-phase click interceptor —
+  // which bails on defaultPrevented, so it won't also route the same tab.
   if (!window.__sbWidgetNewTab) {
     window.__sbWidgetNewTab = true;
-    document.addEventListener("click", (event) => {
-      const link = event.target.closest('a[href*="/second-brain/widgets/"]');
-      if (link?.closest('[data-section-name="second-brain-widgets"]')) {
-        event.preventDefault();
-        window.open(link.href, "_blank", "noopener");
-      }
-    });
+    document.addEventListener(
+      "click",
+      (event) => {
+        const link = event.target.closest(
+          'a[href*="/second-brain/widgets/"]'
+        );
+        if (link?.closest('[data-section-name="second-brain-widgets"]')) {
+          event.preventDefault();
+          window.open(link.href, "_blank", "noopener");
+        }
+      },
+      true
+    );
   }
 
   api.addSidebarSection(
