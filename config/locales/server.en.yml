@@ -10,5 +10,4 @@ en:
     empty_reply: "_(no reply)_"
     errors:
       not_configured: "term-llm is not configured. Set the term-llm URL in site settings."
-      request_failed: "Could not reach term-llm: %{message}"
       reply_failed: "Sorry — I couldn't reach term-llm just now. Please try again."

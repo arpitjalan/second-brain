@@ -32,7 +32,6 @@ after_initialize do
   # app/ classes inherit Rails base classes at load time, so require them here
   # (after the app — ApplicationController, Jobs::Base — has loaded).
   require_relative "app/jobs/regular/second_brain_reply"
-  require_relative "app/controllers/second_brain/ask_controller"
   require_relative "app/controllers/second_brain/chats_controller"
   require_relative "app/controllers/second_brain/widgets_controller"
 
@@ -41,8 +40,6 @@ after_initialize do
   on(:post_created) { |post| SecondBrain::BotResponder.maybe_respond(post) }
 
   Discourse::Application.routes.append do
-    # Legacy one-shot proxy (homepage chat on `main`); harmless here.
-    post "/second-brain/ask" => "second_brain/ask#create"
     # Start a chat from a single message (frictionless homepage box).
     post "/second-brain/chats" => "second_brain/chats#create"
     # Turn a private chat into a public topic.
