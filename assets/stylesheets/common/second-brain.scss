@@ -6,12 +6,16 @@
 
 $sb-max-width: 640px;
 
-// Center the homepage into a single calm column.
-.sb-home {
-  // Signature accent — a modern violet→blue, used for the brand moments.
+// Signature accent — a modern violet→blue, used across the app's brand moments
+// (homepage + chat surfaces), so the whole product feels like one thing.
+:root {
   --sb-accent: #7c5cff;
   --sb-accent-2: #3d8bff;
   --sb-grad: linear-gradient(135deg, #7c5cff 0%, #3d8bff 100%);
+}
+
+// Center the homepage into a single calm column.
+.sb-home {
   position: relative;
   max-width: 720px;
   margin: 48px auto 72px;
@@ -98,6 +102,11 @@ body.archetype-private_message {
     cursor: pointer;
     padding: 6px 0;
     color: var(--primary-medium);
+    transition: color 0.12s ease;
+
+    &:hover {
+      color: var(--sb-accent);
+    }
   }
 
   // Each tool row.
@@ -130,6 +139,7 @@ body.archetype-private_message {
   position: relative;
   z-index: 1;
   text-align: center;
+  animation: sb-rise 0.45s ease both;
 
   &__title {
     font-size: var(--font-up-5);
@@ -237,6 +247,12 @@ body.archetype-private_message {
 // The inline reply box at the bottom of a chat (reuses .sb-starter styling).
 .sb-chat-reply {
   margin: 16px 0 8px;
+
+  // Here the "link" slot is a keyboard hint, not a link — keep it muted.
+  .sb-starter__link {
+    color: var(--primary-medium);
+    font-weight: normal;
+  }
 }
 
 // Tappable starter chips under the homepage box.
@@ -289,11 +305,15 @@ body.archetype-private_message {
       width: 6px;
       height: 6px;
       border-radius: 50%;
-      background: var(--tertiary);
+      background: var(--sb-accent);
       animation: sb-bounce 1.2s infinite ease-in-out both;
 
       &:nth-child(1) {
         animation-delay: -0.24s;
+      }
+
+      &:nth-child(3) {
+        background: var(--sb-accent-2);
       }
 
       &:nth-child(2) {
@@ -447,7 +467,8 @@ body.archetype-private_message {
     color 0.15s ease;
 
   &:hover {
-    color: var(--primary);
+    color: var(--sb-accent);
+    border: 1px solid var(--primary-low);
   }
 
   &--done {
@@ -497,7 +518,7 @@ body.archetype-private_message {
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: var(--tertiary);
+    color: var(--sb-accent);
     margin-bottom: 4px;
   }
 
@@ -512,17 +533,28 @@ body.archetype-private_message {
     gap: 12px;
     min-height: 44px; // comfortable touch target on phones
     padding: 11px 14px;
-    border: 1px solid transparent;
-    border-radius: 8px;
+    border: 1px solid var(--primary-low);
+    border-radius: 10px;
     cursor: pointer;
+    transition:
+      border-color 0.12s ease,
+      background 0.12s ease;
 
     &:hover {
+      border-color: var(--primary-medium);
       background: var(--secondary);
+    }
+
+    // Selected option lights up with the signature accent.
+    &:has(input:checked) {
+      border-color: var(--sb-accent);
+      background: rgb(124 92 255 / 10%);
     }
 
     input {
       margin-top: 3px;
       flex-shrink: 0;
+      accent-color: var(--sb-accent);
     }
   }
 
@@ -561,6 +593,23 @@ body.archetype-private_message {
 
   &__skip {
     color: var(--primary-medium);
+  }
+
+  &__submit {
+    background: var(--sb-grad);
+    border: none;
+    box-shadow: 0 6px 18px -8px rgb(61 139 255 / 55%);
+
+    &:hover,
+    &:focus {
+      background: var(--sb-grad);
+      filter: brightness(1.08);
+    }
+  }
+
+  &__other:focus {
+    border-color: var(--sb-accent);
+    outline: none;
   }
 
   &__sent {
@@ -668,4 +717,17 @@ body.archetype-private_message {
 
 .powered-by-discourse {
   display: none;
+}
+
+// Gentle entrance for the homepage hero.
+@keyframes sb-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
