@@ -121,6 +121,17 @@ before any less-trusted member joins.
 
 ---
 
+## 2. Family agent + per-user agents (feature — planned)
+
+Move from one shared agent to a shared family `stan` + opt-in per-user personal
+agents (distinct named bots, one term-llm container each, behind an agent
+registry). Personal agents are TL4 (non-admin) forum users, private to their
+owner; the launcher defaults to your agent with a switcher. **Firm plan + change
+surface + phased rollout in `docs/design-multi-agent.md`.** Safe first step is the
+behaviour-neutral agent-registry refactor (one agent == today's behaviour).
+
+---
+
 ## Other confirmed-but-deferred items (from the code-review sweep)
 
 Real findings the review verified but that need design/tests, so they were not
