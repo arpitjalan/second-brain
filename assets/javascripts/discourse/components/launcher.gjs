@@ -48,7 +48,7 @@ export default class Launcher extends Component {
   @tracked message = "";
   @tracked starting = false;
   @tracked recent = [];
-  @tracked shared = [];
+  @tracked interesting = [];
   @tracked boardLoaded = false;
   @tracked boardError = false;
   @tracked attachments = [];
@@ -82,7 +82,7 @@ export default class Launcher extends Component {
   }
 
   get hasBoard() {
-    return this.recent.length > 0 || this.shared.length > 0;
+    return this.recent.length > 0 || this.interesting.length > 0;
   }
 
   // First-run nudge: loaded fine, signed in, but nothing to show yet.
@@ -90,7 +90,7 @@ export default class Launcher extends Component {
     return this.boardLoaded && !this.boardError && !this.hasBoard;
   }
 
-  // The "living brain" board: my recent chats + what the family shared.
+  // The "living brain" board: my recent chats + interesting public topics.
   @action
   async loadBoard() {
     if (!this.currentUser) {
@@ -99,7 +99,7 @@ export default class Launcher extends Component {
     try {
       const data = await ajax("/second-brain/home");
       this.recent = data.recent || [];
-      this.shared = data.shared || [];
+      this.interesting = data.interesting || [];
       this.boardError = false;
     } catch {
       // Don't silently vanish — tell the user it failed (vs. genuinely empty).
@@ -263,10 +263,10 @@ export default class Launcher extends Component {
                 {{/each}}
               </div>
             {{/if}}
-            {{#if this.shared.length}}
+            {{#if this.interesting.length}}
               <div class="sb-board__col">
-                <h2 class="sb-board__heading">Shared by the family</h2>
-                {{#each this.shared as |card|}}
+                <h2 class="sb-board__heading">Interesting topics</h2>
+                {{#each this.interesting as |card|}}
                   <a class="sb-board__card" href={{card.url}}>
                     <span class="sb-board__title">{{card.title}}</span>
                     <span class="sb-board__meta">{{card.username}}

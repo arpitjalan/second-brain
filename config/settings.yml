@@ -19,6 +19,11 @@ plugins:
     default: ""
     type: category
     client: true
+  # How many topics each homepage board column shows (recent chats + interesting).
+  second_brain_board_topics:
+    default: 6
+    min: 1
+    max: 50
   # Tell the bot it can act on this forum (needs the term-llm `discourse` skill
   # deployed + credentials configured on the term-llm server). Off until ready.
   second_brain_forum_actions_enabled:

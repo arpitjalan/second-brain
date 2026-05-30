@@ -70,10 +70,10 @@ module ::SecondBrain
     end
 
     # Homepage "living brain" board: the member's recent chats with the bot, and
-    # what the family has shared (recent public topics, optionally scoped to the
-    # public category).
+    # a column of interesting public topics worth a look.
     def home
       bot_id = Bot.user.id
+      limit = SiteSetting.second_brain_board_topics
 
       recent =
         Topic
@@ -82,22 +82,11 @@ module ::SecondBrain
           .joins("JOIN topic_allowed_users sb_bot ON sb_bot.topic_id = topics.id AND sb_bot.user_id = #{bot_id.to_i}")
           .includes(:user)
           .order(bumped_at: :desc)
-          .limit(6)
-
-      shared =
-        Topic
-          .joins(
-            "JOIN topic_custom_fields sb_shared ON sb_shared.topic_id = topics.id AND sb_shared.name = 'second_brain_shared'",
-          )
-          .where(deleted_at: nil, visible: true)
-          .includes(:user)
-          .order(bumped_at: :desc)
-          .limit(6)
-      shared = shared.select { |t| guardian.can_see?(t) }
+          .limit(limit)
 
       render json: {
         recent: recent.map { |t| topic_card(t) },
-        shared: shared.map { |t| topic_card(t) },
+        interesting: interesting_topics(bot_id, limit).map { |t| topic_card(t) },
       }
     end
 
@@ -154,6 +143,48 @@ module ::SecondBrain
     end
 
     private
+
+    # The homepage's right column: public topics worth a look, prioritized
+    # shared (published bot chats) → agent-created → hot/recently-active, deduped
+    # and capped at `limit`. The last tier is a never-empty fallback. Only topics
+    # the member can see are included.
+    def interesting_topics(bot_id, limit)
+      picked = []
+      seen = Set.new
+
+      gather =
+        lambda do |scope|
+          scope.each do |topic|
+            break if picked.size >= limit
+            next if seen.include?(topic.id) || !guardian.can_see?(topic)
+            seen << topic.id
+            picked << topic
+          end
+        end
+
+      public_topics =
+        Topic.where(archetype: Archetype.default, deleted_at: nil, visible: true).includes(:user)
+
+      # 1) Published "shared" chats.
+      gather.call(
+        public_topics
+          .joins("JOIN topic_custom_fields sb ON sb.topic_id = topics.id AND sb.name = 'second_brain_shared'")
+          .order(bumped_at: :desc)
+          .limit(limit),
+      )
+
+      # 2) Topics the agent created on the forum.
+      if picked.size < limit
+        gather.call(public_topics.where(user_id: bot_id).order(created_at: :desc).limit(limit))
+      end
+
+      # 3) Hot / recently-active topics — the fallback so the column is never empty.
+      if picked.size < limit
+        gather.call(public_topics.order(bumped_at: :desc).limit(limit * 3))
+      end
+
+      picked
+    end
 
     def derive_title(message)
       line = message.lines.first.to_s.strip
