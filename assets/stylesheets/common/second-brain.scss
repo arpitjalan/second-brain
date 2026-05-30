@@ -78,6 +78,17 @@ body.user-messages-page {
   }
 }
 
+// Embedded term-llm widget (added next to widget links by the JS decorator).
+.sb-widget-frame {
+  display: block;
+  width: 100%;
+  height: 480px;
+  margin: 10px 0;
+  border: 1px solid var(--primary-low);
+  border-radius: 10px;
+  background: var(--secondary);
+}
+
 .sb-launcher {
   text-align: center;
 

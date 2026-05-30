@@ -95,8 +95,26 @@ module ::SecondBrain
     def render_reply(text, tools)
       parts = []
       parts << tool_summary(tools) if tools.present?
-      parts << text if text.to_s.strip.present?
+      body = absolutize_widget_links(text.to_s)
+      parts << body if body.strip.present?
       parts.join("\n\n")
+    end
+
+    # term-llm returns widget links relative to its own server (e.g.
+    # "/chat/widgets/dashboard/"), which Discourse would resolve against its own
+    # origin. Rewrite them to absolute term-llm URLs so they point at the right
+    # host (and so the client can embed them as iframes).
+    def absolutize_widget_links(markdown)
+      base_url = SiteSetting.second_brain_term_llm_url.to_s.sub(%r{/+\z}, "")
+      return markdown if base_url.blank?
+
+      path = (URI.parse(base_url).path.presence rescue nil).to_s
+      relative = "#{path}/widgets/"
+      absolute = "#{base_url}/widgets/"
+
+      # Match the relative prefix only at a boundary, so already-absolute URLs
+      # (".../host/chat/widgets/…") are left alone.
+      markdown.gsub(%r{(?<![\w:/])#{Regexp.escape(relative)}}, absolute)
     end
 
     def tool_summary(tools)
