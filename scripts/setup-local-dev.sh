@@ -13,9 +13,14 @@
 # See docs/local-dev.md for the full explanation.
 #
 # Usage:
-#   scripts/setup-local-dev.sh                 # set up / refresh agent "stan"
-#   scripts/setup-local-dev.sh john            # set up / refresh agent "john"
-#   scripts/setup-local-dev.sh john --new-key  # ...and force a fresh Discourse API key
+#   scripts/setup-local-dev.sh                           # family agent "stan" (admin)
+#   scripts/setup-local-dev.sh john                      # family agent "john"
+#   scripts/setup-local-dev.sh stan-arpit --owner arpit  # a PERSONAL agent for arpit
+#   scripts/setup-local-dev.sh stan --new-key            # rotate the Discourse API key
+#
+# A personal agent (--owner USER) is a TL4 (non-admin) bot private to that member.
+# It gets a row in the agent registry (second_brain_agents) instead of the global
+# family settings, so the family agent is left untouched.
 #
 set -euo pipefail
 
@@ -25,17 +30,23 @@ die() { printf '\033[1;31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 DISCOURSE_DIR="${DISCOURSE_DIR:-$HOME/discourse}"
 PLUGIN_DIR="${PLUGIN_DIR:-$HOME/work/second-brain}"
 
-# Parse args: an optional agent name (positional) plus the optional --new-key flag,
-# in any order. AGENT defaults to "stan" (the plugin's default bot username).
+# Parse args: an optional agent name (positional), --owner USER (personal agent),
+# and --new-key. AGENT defaults to "stan" (the plugin's default bot username).
 AGENT="stan"
 NEW_KEY=false
-for arg in "$@"; do
-  case "$arg" in
-    --new-key) NEW_KEY=true ;;
-    -*)        die "unknown option: $arg  (usage: setup-local-dev.sh [AGENT] [--new-key])" ;;
-    *)         AGENT="$arg" ;;
+OWNER=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --new-key)  NEW_KEY=true ;;
+    --owner)    shift; OWNER="${1:-}"; [ -n "$OWNER" ] || die "--owner needs a username" ;;
+    --owner=*)  OWNER="${1#--owner=}" ;;
+    -*)         die "unknown option: $1  (usage: setup-local-dev.sh [AGENT] [--owner USER] [--new-key])" ;;
+    *)          AGENT="$1" ;;
   esac
+  shift
 done
+PERSONAL=false
+[ -n "$OWNER" ] && PERSONAL=true
 
 # --- 0. discover the agent's container + its network --------------------------
 say "Discovering container for agent '$AGENT' + network"
@@ -45,6 +56,12 @@ NET=$(docker inspect "$CONTAINER" --format '{{range $k,$v := .NetworkSettings.Ne
 GW=$(docker network inspect "$NET" --format '{{(index .IPAM.Config 0).Gateway}}')
 SUBNET=$(docker network inspect "$NET" --format '{{(index .IPAM.Config 0).Subnet}}')
 echo "agent=$AGENT  container=$CONTAINER  net=$NET  gateway=$GW  subnet=$SUBNET"
+
+# Each `contain` publishes its internal :8081 to a distinct host port — discover it.
+PORT=$(docker port "$CONTAINER" 8081 2>/dev/null | sed -n 's/.*:\([0-9][0-9]*\)$/\1/p' | head -1)
+PORT="${PORT:-8081}"
+AGENT_URL="http://localhost:${PORT}/chat"
+echo "agent-url=$AGENT_URL  personal=$PERSONAL${OWNER:+  owner=$OWNER}"
 
 # Container->host networking differs by OS. On Linux the container reaches the
 # host via the bridge gateway, but only once we forward gateway:3000 ->
@@ -71,25 +88,44 @@ echo "WEB_TOKEN=${WEB_TOKEN:0:8}…"
 # and the plugin would mint a fresh bot on every call. Caveat: if a *human* already
 # owns the chosen username, that account becomes the bot (and is granted admin) —
 # so pick a name that isn't a real member's.
-say "Ensuring the Discourse bot '$AGENT' is admin"
-BOT_USERNAME=$(cd "$DISCOURSE_DIR" && SB_AGENT="$AGENT" bin/rails runner '
+say "Ensuring the Discourse bot '$AGENT' exists ($([ "$PERSONAL" = true ] && echo "TL4, owned by $OWNER" || echo "admin"))"
+BOT_USERNAME=$(cd "$DISCOURSE_DIR" && SB_AGENT="$AGENT" SB_PERSONAL="$PERSONAL" SB_OWNER="$OWNER" bin/rails runner '
 name = ENV["SB_AGENT"]
 existing = User.find_by(username_lower: name.downcase)
 # If the name does not exist yet and Discourse would rename it on creation, bail.
 if existing.nil? && UserNameSuggester.suggest(name).downcase != name.downcase
   print "UNUSABLE:#{UserNameSuggester.suggest(name)}"
+elsif ENV["SB_PERSONAL"] == "true"
+  owner = User.find_by(username_lower: ENV["SB_OWNER"].to_s.downcase)
+  if owner.nil?
+    print "NOOWNER"
+  else
+    u = existing || User.create!(
+      username: UserNameSuggester.suggest(name),
+      name: name.titleize,
+      email: "#{name.downcase}@bot.second-brain.invalid",
+      password: SecureRandom.hex(32),
+      active: true,
+      approved: true,
+      trust_level: TrustLevel[4],
+    )
+    # Personal agents are TL4 (locked so it sticks), never admin.
+    u.update!(admin: false, trust_level: TrustLevel[4], manual_locked_trust_level: TrustLevel[4])
+    print u.username
+  end
 else
   SiteSetting.second_brain_bot_username = name
-  u = SecondBrain::Bot.user            # find-or-create the bot user named SB_AGENT
+  u = SecondBrain::Bot.user            # find-or-create the family bot named SB_AGENT
   u.update!(admin: true) unless u.admin?
   print u.username
 end
 ' 2>/dev/null)
 case "$BOT_USERNAME" in
   UNUSABLE:*) die "agent name '$AGENT' is not a usable Discourse username (reserved or invalid — Discourse would rename it to '${BOT_USERNAME#UNUSABLE:}'). Pick a different agent name." ;;
+  NOOWNER)    die "--owner user '$OWNER' not found in Discourse." ;;
   "")         die "Could not ensure the bot user '$AGENT' (is the Discourse dev env set up?)." ;;
 esac
-echo "bot=$BOT_USERNAME (admin)"
+echo "bot=$BOT_USERNAME ($([ "$PERSONAL" = true ] && echo "TL4" || echo "admin"))"
 
 # Reuse the key already baked into the agent's .zshenv unless --new-key was passed.
 EXISTING_KEY=$(docker exec -u agent "$CONTAINER" sh -c 'sed -n "s/^export DISCOURSE_API_KEY=//p" /home/agent/.zshenv 2>/dev/null' | head -1 || true)
@@ -148,20 +184,37 @@ else
   say "Skipping host forwarder (macOS: Docker Desktop routes host.docker.internal -> host)"
 fi
 
-# --- 6. plugin settings: point at the local agent + enable forum actions -----
+# --- 6. wire the agent: family -> global settings; personal -> registry row --
 say "Configuring plugin settings"
-( cd "$DISCOURSE_DIR" && WEB_TOKEN="$WEB_TOKEN" bin/rails runner '
-SiteSetting.second_brain_term_llm_url = "http://localhost:8081/chat"
-SiteSetting.second_brain_term_llm_api_key = ENV["WEB_TOKEN"]
-SiteSetting.second_brain_forum_actions_enabled = true
-puts "  url=#{SiteSetting.second_brain_term_llm_url} forum_actions=#{SiteSetting.second_brain_forum_actions_enabled}"
-' 2>/dev/null )
+if [ "$PERSONAL" = true ]; then
+  ( cd "$DISCOURSE_DIR" && SB_BOT="$BOT_USERNAME" SB_URL="$AGENT_URL" SB_TOKEN="$WEB_TOKEN" SB_OWNER="$OWNER" bin/rails runner '
+  bot = User.find_by(username_lower: ENV["SB_BOT"].downcase)
+  owner = User.find_by(username_lower: ENV["SB_OWNER"].downcase)
+  row = SecondBrain::AgentRecord.find_or_initialize_by(bot_user_id: bot.id)
+  row.update!(
+    term_llm_url: ENV["SB_URL"],
+    term_llm_token: ENV["SB_TOKEN"],
+    agent_name: bot.username,
+    owner_user_id: owner.id,
+    forum_role: "tl4",
+  )
+  SiteSetting.second_brain_forum_actions_enabled = true
+  puts "  registry: #{bot.username} -> #{ENV["SB_URL"]} (owner=#{owner.username}, tl4)"
+  ' 2>/dev/null )
+else
+  ( cd "$DISCOURSE_DIR" && SB_URL="$AGENT_URL" WEB_TOKEN="$WEB_TOKEN" bin/rails runner '
+  SiteSetting.second_brain_term_llm_url = ENV["SB_URL"]
+  SiteSetting.second_brain_term_llm_api_key = ENV["WEB_TOKEN"]
+  SiteSetting.second_brain_forum_actions_enabled = true
+  puts "  url=#{SiteSetting.second_brain_term_llm_url} forum_actions=#{SiteSetting.second_brain_forum_actions_enabled}"
+  ' 2>/dev/null )
+fi
 
 # --- 7. restart the agent so it discovers the skill --------------------------
 say "Restarting $AGENT (skills are scanned at startup)"
 docker restart "$CONTAINER" >/dev/null
 for _ in $(seq 1 20); do
-  [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/chat/)" = "200" ] && break; sleep 1
+  [ "$(curl -s -o /dev/null -w '%{http_code}' "${AGENT_URL}/")" = "200" ] && break; sleep 1
 done
 echo "$AGENT back up"
 
