@@ -70,6 +70,21 @@ module ::SecondBrain
       render json: { url: topic.relative_url }
     end
 
+    # The agents the current member may chat with: the shared family agent + any
+    # personal agents they own. Drives the launcher's agent switcher.
+    def agents
+      list =
+        Agent.available_to(current_user).filter_map do |a|
+          next unless a.user
+          {
+            username: a.user.username,
+            name: a.user.name.presence || a.user.username,
+            owned: !a.shared?,
+          }
+        end
+      render json: { agents: list }
+    end
+
     # Homepage "living brain" board: the member's recent chats with the bot, and
     # a column of interesting public topics worth a look.
     def home
@@ -149,10 +164,17 @@ module ::SecondBrain
 
     private
 
-    # Which agent a new chat is with. Phase 1: always the shared family agent.
-    # (Phase 2 reads params[:agent] + enforces owner-private access.)
+    # Which agent a new chat is with. With no `agent` param: the member's own
+    # personal agent if they have one, else the family agent. With a param: that
+    # agent — but a personal agent only its owner may chat with.
     def create_agent
-      Agent.family
+      requested = params[:agent].to_s.strip
+      return Agent.owned_by(current_user).first || Agent.family if requested.blank?
+
+      agent = Agent.resolve(::User.find_by(username_lower: requested.downcase))
+      raise Discourse::InvalidParameters, :agent if agent.nil?
+      raise Discourse::InvalidAccess unless agent.shared? || agent.owner_user_id == current_user.id
+      agent
     end
 
     # A safe `IN (...)` list of agent bot user ids (ints; never empty).

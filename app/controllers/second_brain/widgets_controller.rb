@@ -29,26 +29,11 @@ module ::SecondBrain
 
     # Lists the family's term-llm widgets (for the sidebar). Pulls the JSON
     # status from term-llm and returns mount/title/state for each.
+    # Aggregate widgets across the agents this member can access (the family
+    # agent + their own), each tagged with its agent + same-origin proxy url.
     def index
-      agent = widget_agent
-      base_url = agent.url.to_s.sub(%r{/+\z}, "")
-      return render json: { widgets: [] } if base_url.blank?
-
-      upstream = fetch_following_redirects(URI.parse("#{base_url}/admin/widgets/status"), agent)
-      data = JSON.parse(upstream.body) rescue {}
-      widgets =
-        Array(data["widgets"]).map do |w|
-          {
-            mount: w["mount"] || w["id"],
-            title: w["title"].presence || w["mount"] || w["id"],
-            description: w["description"],
-            state: w["state"],
-          }
-        end
-
-      render json: { widgets: widgets.select { |w| w[:mount].present? } }
-    rescue SocketError, Timeout::Error, Errno::ECONNREFUSED, Errno::EHOSTUNREACH
-      render json: { widgets: [] }
+      widgets = Agent.available_to(current_user).flat_map { |agent| agent_widgets(agent) }
+      render json: { widgets: widgets }
     end
 
     def show
@@ -77,10 +62,49 @@ module ::SecondBrain
 
     private
 
-    # Which agent's widgets this request is for. Phase 1: the shared family agent.
-    # (Phase 2 reads an <agent> path segment + access-checks it against the user.)
+    # Which agent's widgets this request is for. The agent-scoped route carries an
+    # <agent> segment (access-checked); the legacy route (no segment) = family.
     def widget_agent
-      Agent.family
+      requested = params[:agent].to_s.strip
+      return Agent.family if requested.blank?
+
+      agent = Agent.resolve(::User.find_by(username_lower: requested.downcase))
+      raise Discourse::NotFound if agent.nil?
+      raise Discourse::InvalidAccess unless agent.shared? || agent.owner_user_id == current_user.id
+      agent
+    end
+
+    # Same-origin proxy prefix for an agent's widgets. Family keeps the legacy path
+    # (so old embeds keep working); personal agents get an agent-scoped path so the
+    # widget's own relative fetches inherit the agent.
+    def widget_proxy_prefix(agent)
+      agent.shared? ? "/second-brain/widgets/" : "/second-brain/agent-widgets/#{agent.user.username}/"
+    end
+
+    # The widgets for one agent, tagged with its identity + proxy urls.
+    def agent_widgets(agent)
+      return [] unless agent.user
+      base_url = agent.url.to_s.sub(%r{/+\z}, "")
+      return [] if base_url.blank?
+
+      upstream = fetch_following_redirects(URI.parse("#{base_url}/admin/widgets/status"), agent)
+      data = JSON.parse(upstream.body) rescue {}
+      prefix = widget_proxy_prefix(agent)
+      Array(data["widgets"]).filter_map do |w|
+        mount = (w["mount"] || w["id"]).to_s
+        next if mount.blank?
+        {
+          mount: mount,
+          title: w["title"].presence || mount,
+          description: w["description"],
+          state: w["state"],
+          agent: agent.user.username,
+          owned: !agent.shared?,
+          url: "#{prefix}#{mount}",
+        }
+      end
+    rescue SocketError, Timeout::Error, Errno::ECONNREFUSED, Errno::EHOSTUNREACH
+      []
     end
 
     # Widget routes often 3xx (trailing-slash / index normalization); follow the

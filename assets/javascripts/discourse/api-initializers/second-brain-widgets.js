@@ -2,18 +2,21 @@ import { apiInitializer } from "discourse/lib/api";
 import { iconHTML } from "discourse/lib/icon-library";
 
 // Embed term-llm widgets inline as little "apps". The bot's reply links to our
-// same-origin proxy path (/second-brain/widgets/<name>/), which forwards to
-// term-llm with the Bearer token. We find those links in cooked posts and drop
-// a framed widget card next to them — in the DOM (not the cooked HTML), so the
-// sanitizer doesn't strip it.
-const PROXY_WIDGETS = "/second-brain/widgets/";
+// same-origin proxy path — family "/second-brain/widgets/<name>/" or a personal
+// agent's "/second-brain/agent-widgets/<agent>/<name>/" — which forwards to that
+// agent's term-llm with its Bearer token. We find those links in cooked posts and
+// drop a framed widget card next to them — in the DOM (not the cooked HTML), so
+// the sanitizer doesn't strip it.
+const WIDGET_PREFIX_RE = /\/second-brain\/(?:agent-widgets\/[^/]+|widgets)\//;
+const WIDGET_LINK_SELECTOR =
+  'a[href*="/second-brain/widgets/"], a[href*="/second-brain/agent-widgets/"]';
 
 // "/second-brain/widgets/hacker-news-top/" -> "Hacker News Top"
 function widgetTitle(href) {
   try {
     const path = new URL(href, window.location.origin).pathname;
     const slug =
-      (path.split(PROXY_WIDGETS)[1] || "").replace(/\/+$/, "").split("/")[0] ||
+      (path.split(WIDGET_PREFIX_RE)[1] || "").replace(/\/+$/, "").split("/")[0] ||
       "Widget";
     return decodeURIComponent(slug)
       .replace(/[-_]+/g, " ")
@@ -131,7 +134,7 @@ export default apiInitializer((api) => {
   api.decorateCookedElement(
     (element) => {
       element
-        .querySelectorAll(`a[href*="${PROXY_WIDGETS}"]`)
+        .querySelectorAll(WIDGET_LINK_SELECTOR)
         .forEach((link) => {
           if (link.dataset.sbWidget) {
             return;

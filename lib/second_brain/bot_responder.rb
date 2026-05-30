@@ -14,7 +14,12 @@ module ::SecondBrain
       return unless topic&.private_message?
       return unless TermLlmClient.configured?
       return if Agent.bot_user_ids.include?(post.user_id) # never reply to an agent's own post
-      return unless topic.topic_allowed_users.where(user_id: Agent.bot_user_ids).exists?
+
+      agent = Agent.for_topic(topic)
+      return if agent.nil? # not a chat with any agent
+      # A personal agent only serves its owner (defense-in-depth — create already
+      # restricts who can open the PM).
+      return if !agent.shared? && agent.owner_user_id != post.user_id
 
       Jobs.enqueue(:second_brain_reply, post_id: post.id)
     end
@@ -295,17 +300,22 @@ module ::SecondBrain
 
     # term-llm widget links point at its own server and need its Bearer token.
     # Rewrite them (relative "/chat/widgets/…" or absolute "<host>/chat/widgets/…")
-    # to our same-origin proxy path "/second-brain/widgets/…", which forwards to
-    # term-llm with the token. The client then embeds that as an iframe.
-    PROXY_WIDGETS = "/second-brain/widgets/"
-
+    # to our same-origin proxy path, which forwards to term-llm with the token.
+    # Family uses the legacy "/second-brain/widgets/…"; a personal agent uses an
+    # agent-scoped path so the widget's own relative fetches stay on that agent.
     def proxy_widget_links(markdown)
       base_url = @agent.url.to_s.sub(%r{/+\z}, "")
       return markdown if base_url.blank?
 
+      prefix =
+        if @agent.shared?
+          "/second-brain/widgets/"
+        else
+          "/second-brain/agent-widgets/#{@agent.user.username}/"
+        end
       path = (URI.parse(base_url).path.presence rescue nil).to_s
-      result = markdown.gsub("#{base_url}/widgets/", PROXY_WIDGETS)
-      result.gsub(%r{(?<![\w:/])#{Regexp.escape("#{path}/widgets/")}}, PROXY_WIDGETS)
+      result = markdown.gsub("#{base_url}/widgets/", prefix)
+      result.gsub(%r{(?<![\w:/])#{Regexp.escape("#{path}/widgets/")}}, prefix)
     end
 
     def tool_summary(tools)

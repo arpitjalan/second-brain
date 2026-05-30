@@ -10,6 +10,7 @@ import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import { getUploadMarkdown } from "discourse/lib/uploads";
 import DiscourseURL from "discourse/lib/url";
+import { eq } from "discourse/truth-helpers";
 import DButton from "discourse/ui-kit/d-button";
 import SbAttach from "./sb-attach";
 
@@ -52,10 +53,23 @@ export default class Launcher extends Component {
   @tracked boardLoaded = false;
   @tracked boardError = false;
   @tracked attachments = [];
+  @tracked agents = [];
+  @tracked selectedAgent = null;
   inputEl = null;
 
   get botUsername() {
     return this.siteSettings.second_brain_bot_username || "stan";
+  }
+
+  // The agent the composer targets — the selected one, else the family bot name.
+  get composerBotName() {
+    const a = this.agents.find((x) => x.username === this.selectedAgent);
+    return a?.name || this.botUsername;
+  }
+
+  // Only worth showing the switcher when there's a choice (a personal agent).
+  get showAgentSwitcher() {
+    return this.agents.length > 1;
   }
 
   // Time-of-day greeting (local time), personalized when we know who's here.
@@ -114,6 +128,28 @@ export default class Launcher extends Component {
     }
   }
 
+  // The agents this member may chat with (family + their own). Defaults the
+  // composer to the member's personal agent when they have one.
+  @action
+  async loadAgents() {
+    if (!this.currentUser) {
+      return;
+    }
+    try {
+      const data = await ajax("/second-brain/agents");
+      this.agents = data.agents || [];
+      const owned = this.agents.find((a) => a.owned);
+      this.selectedAgent = owned?.username || this.agents[0]?.username || null;
+    } catch {
+      this.agents = [];
+    }
+  }
+
+  @action
+  selectAgent(username) {
+    this.selectedAgent = username;
+  }
+
   @action
   registerInput(el) {
     this.inputEl = el;
@@ -166,12 +202,14 @@ export default class Launcher extends Component {
       .filter((part) => part && part.trim())
       .join("\n\n");
 
+    const data = { message };
+    if (this.selectedAgent) {
+      data.agent = this.selectedAgent;
+    }
+
     this.starting = true;
     try {
-      const result = await ajax("/second-brain/chats", {
-        type: "POST",
-        data: { message },
-      });
+      const result = await ajax("/second-brain/chats", { type: "POST", data });
       DiscourseURL.routeTo(result.url);
     } catch (error) {
       popupAjaxError(error);
@@ -180,22 +218,42 @@ export default class Launcher extends Component {
   }
 
   <template>
-    <div class="sb-launcher" {{didInsert this.loadBoard}}>
+    <div
+      class="sb-launcher"
+      {{didInsert this.loadBoard}}
+      {{didInsert this.loadAgents}}
+    >
       <h1 class="sb-launcher__title">
         {{#if this.currentUser}}{{this.greeting}}{{else}}Your second brain{{/if}}
       </h1>
       <p class="sb-launcher__subtitle">
         Chat with
-        {{this.botUsername}}
+        {{this.composerBotName}}
         about anything. It stays private, just for you.
       </p>
 
       {{#if this.currentUser}}
+        {{#if this.showAgentSwitcher}}
+          <div class="sb-agent-switch" role="group" aria-label="Choose an agent">
+            {{#each this.agents as |a|}}
+              <button
+                type="button"
+                class="sb-agent-switch__pill
+                  {{if (eq a.username this.selectedAgent) 'is-active'}}"
+                aria-pressed={{if (eq a.username this.selectedAgent) 'true' 'false'}}
+                {{on "click" (fn this.selectAgent a.username)}}
+              >
+                {{a.name}}
+              </button>
+            {{/each}}
+          </div>
+        {{/if}}
+
         <div class="sb-starter">
           <textarea
             class="sb-starter__input"
-            aria-label="Message {{this.botUsername}}"
-            placeholder="Message {{this.botUsername}}…"
+            aria-label="Message {{this.composerBotName}}"
+            placeholder="Message {{this.composerBotName}}…"
             rows="3"
             value={{this.message}}
             disabled={{this.starting}}

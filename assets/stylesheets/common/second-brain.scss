@@ -328,6 +328,44 @@ body.archetype-private_message {
   }
 }
 
+// Agent switcher — pick which agent the launcher box talks to (family / yours).
+.sb-agent-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-bottom: 12px;
+
+  &__pill {
+    border: 1px solid var(--primary-low);
+    background: var(--secondary);
+    color: var(--primary-high);
+    border-radius: 999px;
+    padding: 4px 14px;
+    font-size: var(--font-down-1);
+    cursor: pointer;
+    transition:
+      border-color 0.15s ease,
+      background 0.15s ease,
+      color 0.15s ease;
+
+    &:hover {
+      border-color: var(--sb-accent);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--sb-accent);
+      outline-offset: 2px;
+    }
+
+    &.is-active {
+      border-color: transparent;
+      background: var(--sb-grad);
+      color: #fff;
+    }
+  }
+}
+
 // The inline reply box at the bottom of a chat (reuses .sb-starter styling).
 .sb-chat-reply {
   margin: 16px 0 8px;

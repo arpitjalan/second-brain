@@ -38,7 +38,8 @@ require_relative "lib/second_brain/bot_responder"
 
 after_initialize do
   # app/ classes inherit Rails base classes at load time, so require them here
-  # (after the app — ApplicationController, Jobs::Base — has loaded).
+  # (after the app — ApplicationController, ActiveRecord::Base, Jobs::Base — has loaded).
+  require_relative "app/models/second_brain/agent_record"
   require_relative "app/jobs/regular/second_brain_reply"
   require_relative "app/controllers/second_brain/chats_controller"
   require_relative "app/controllers/second_brain/widgets_controller"
@@ -71,15 +72,19 @@ after_initialize do
   Discourse::Application.routes.append do
     # Homepage board: the member's recent chats + what the family shared.
     get "/second-brain/home" => "second_brain/chats#home"
+    # The agents this member may chat with (family + their own) — for the switcher.
+    get "/second-brain/agents" => "second_brain/chats#agents"
     # Start a chat from a single message (frictionless homepage box).
     post "/second-brain/chats" => "second_brain/chats#create"
     # Turn a private chat into a public topic.
     post "/second-brain/chats/:topic_id/make_public" => "second_brain/chats#make_public"
     # Answer a pending ask_user prompt (resumes the paused run).
     post "/second-brain/answer" => "second_brain/chats#answer"
-    # List the family's term-llm widgets (for the sidebar).
+    # List the term-llm widgets across the member's agents (for the sidebar).
     get "/second-brain/list-widgets" => "second_brain/widgets#index"
-    # Proxy term-llm widget pages/assets (with the Bearer token, server-side).
+    # Proxy a specific agent's widget pages/assets (with that agent's token).
+    get "/second-brain/agent-widgets/:agent/*path" => "second_brain/widgets#show", format: false
+    # Legacy/family widget proxy (no agent segment) — keeps old embeds working.
     get "/second-brain/widgets/*path" => "second_brain/widgets#show", format: false
   end
 end

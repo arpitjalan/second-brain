@@ -50,10 +50,12 @@ module ::SecondBrain
         )
       end
 
-      # The agent backing a given bot user, or nil if it isn't an agent.
-      # Phase 1: only the family bot resolves. (Phase 2 checks the registry first.)
+      # The agent backing a given bot user: a registry row if present, else the
+      # family agent for the family bot, else nil.
       def resolve(bot_user)
         return nil if bot_user.nil?
+        row = registry_row_for(bot_user.id)
+        return from_record(row) if row
         bot_user.id == Bot.user.id ? family : nil
       end
 
@@ -65,14 +67,58 @@ module ::SecondBrain
         bot_id ? resolve(::User.find_by(id: bot_id)) : nil
       end
 
-      # Every agent (Phase 1: just the family agent).
+      # Every agent: the registry rows + the family agent (unless it has a row).
       def all
-        [family]
+        agents = registry_agents
+        agents << family unless agents.any? { |a| a.bot_user_id == Bot.user.id }
+        agents
+      end
+
+      # Agents owned by (personal to) a given user.
+      def owned_by(user)
+        return [] if user.nil?
+        all.select { |a| a.owner_user_id == user.id }
+      end
+
+      # The agents a user may chat with: the shared family agent + their own.
+      def available_to(user)
+        ([family] + owned_by(user)).uniq(&:bot_user_id)
       end
 
       # Bot user ids of all agents — used to recognize agent participants/posts.
       def bot_user_ids
         all.map(&:bot_user_id).compact
+      end
+
+      private
+
+      def registry_agents
+        AgentRecord
+          .order(:id)
+          .filter_map do |row|
+            agent = from_record(row)
+            agent if agent.user # skip rows whose bot user was deleted
+          end
+      rescue ActiveRecord::StatementInvalid
+        [] # table not migrated yet — behave like a single (family) agent
+      end
+
+      def registry_row_for(bot_user_id)
+        AgentRecord.find_by(bot_user_id: bot_user_id)
+      rescue ActiveRecord::StatementInvalid
+        nil
+      end
+
+      def from_record(row)
+        new(
+          user: ::User.find_by(id: row.bot_user_id),
+          url: row.term_llm_url,
+          token: row.term_llm_token,
+          name: row.agent_name,
+          model: row.model,
+          owner_user_id: row.owner_user_id,
+          forum_role: (row.forum_role.presence || "tl4").to_sym,
+        )
       end
     end
   end

@@ -2,8 +2,9 @@ import { tracked } from "@glimmer/tracking";
 import { ajax } from "discourse/lib/ajax";
 import { apiInitializer } from "discourse/lib/api";
 
-// A "Widgets" sidebar section listing the family's term-llm widgets. Each link
-// opens the widget (through our authenticated proxy) in a new tab.
+// A "Widgets" sidebar section listing the term-llm widgets across the member's
+// agents (family + their own; personal ones are labelled). Each link opens the
+// widget (through our authenticated proxy) in a new tab.
 export default apiInitializer((api) => {
   // The widget links are same-origin (our proxy), so Discourse's built-in
   // "external links in new tab" never triggers. Open them in a new tab via a
@@ -16,10 +17,11 @@ export default apiInitializer((api) => {
     document.addEventListener(
       "click",
       (event) => {
-        const link = event.target.closest(
-          'a[href*="/second-brain/widgets/"]'
-        );
-        if (link?.closest('[data-section-name="second-brain-widgets"]')) {
+        const link = event.target.closest("a[href]");
+        if (
+          link?.closest('[data-section-name="second-brain-widgets"]') &&
+          /\/second-brain\/(agent-)?widgets\//.test(link.getAttribute("href") || "")
+        ) {
           event.preventDefault();
           window.open(link.href, "_blank", "noopener");
         }
@@ -37,19 +39,21 @@ export default apiInitializer((api) => {
         }
 
         get name() {
-          return `second-brain-widget-${this.widget.mount}`;
+          return `second-brain-widget-${this.widget.agent || "family"}-${this.widget.mount}`;
         }
 
         get title() {
-          return this.widget.title;
+          return this.widget.owned
+            ? `${this.widget.title} · ${this.widget.agent}`
+            : this.widget.title;
         }
 
         get text() {
-          return this.widget.title;
+          return this.title;
         }
 
         get href() {
-          return `/second-brain/widgets/${this.widget.mount}/`;
+          return this.widget.url || `/second-brain/widgets/${this.widget.mount}/`;
         }
 
         get prefixType() {
