@@ -55,15 +55,39 @@ function buildCard(href) {
     "sandbox",
     "allow-scripts allow-same-origin allow-forms allow-popups"
   );
-  // Drop any pending shimmer once the widget paints.
-  frame.addEventListener("load", () => {
+  const clearShimmer = () => {
     frameWrap
       .querySelectorAll(".sb-widget-card__shimmer")
       .forEach((s) => s.remove());
+  };
+  // Never shimmer forever: if the frame hasn't loaded in 15s (term-llm down, bad
+  // path), drop the shimmer and show a calm error. Refresh stays available.
+  const armTimeout = () => {
+    clearTimeout(frameWrap._sbTimeout);
+    frameWrap._sbTimeout = setTimeout(() => {
+      if (!frameWrap.querySelector(".sb-widget-card__shimmer")) {
+        return;
+      }
+      clearShimmer();
+      const note = document.createElement("div");
+      note.className = "sb-widget-card__error";
+      note.textContent = "Widget unavailable — try refreshing.";
+      frameWrap.appendChild(note);
+    }, 15000);
+  };
+  // Drop the shimmer once the widget paints.
+  frame.addEventListener("load", () => {
+    clearTimeout(frameWrap._sbTimeout);
+    clearShimmer();
   });
+  armTimeout();
 
   const refresh = iconButton("arrows-rotate", "Refresh", () => {
+    frameWrap
+      .querySelectorAll(".sb-widget-card__error")
+      .forEach((n) => n.remove());
     frameWrap.prepend(shimmerEl());
+    armTimeout();
     const url = new URL(frame.src, window.location.origin);
     url.searchParams.set("_r", Date.now().toString()); // cache-bust
     frame.src = url.toString();

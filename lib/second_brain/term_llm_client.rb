@@ -52,7 +52,7 @@ module ::SecondBrain
     def stream_respond(messages, session_id: nil, &block)
       raise NotConfigured if SiteSetting.second_brain_term_llm_url.blank?
 
-      uri = URI.parse("#{base_url}/v1/responses")
+      uri = parse_uri("#{base_url}/v1/responses")
       request = Net::HTTP::Post.new(uri)
       request["Content-Type"] = "application/json"
       request["Accept"] = "text/event-stream"
@@ -77,7 +77,7 @@ module ::SecondBrain
     def stream_events(response_id:, after:, &block)
       raise NotConfigured if SiteSetting.second_brain_term_llm_url.blank?
 
-      uri = URI.parse("#{base_url}/v1/responses/#{response_id}/events?after=#{after.to_i}")
+      uri = parse_uri("#{base_url}/v1/responses/#{response_id}/events?after=#{after.to_i}")
       request = Net::HTTP::Get.new(uri)
       request["Accept"] = "text/event-stream"
       auth(request)
@@ -92,7 +92,7 @@ module ::SecondBrain
       raise NotConfigured if SiteSetting.second_brain_term_llm_url.blank?
 
       body = cancelled ? { call_id: call_id, cancelled: true } : { call_id: call_id, answers: answers }
-      uri = URI.parse("#{base_url}/v1/sessions/#{session_id}/ask_user")
+      uri = parse_uri("#{base_url}/v1/sessions/#{session_id}/ask_user")
       http = build_http(uri, read_timeout: 30)
       request = Net::HTTP::Post.new(uri)
       request["Content-Type"] = "application/json"
@@ -108,8 +108,9 @@ module ::SecondBrain
       else
         raise Error, "ask_user submit failed (HTTP #{response.code})"
       end
-    rescue JSON::ParserError
-      {}
+    rescue JSON::ParserError => e
+      # A 200 with a non-JSON body must NOT silently advance the run as answered.
+      raise Error, "invalid JSON from term-llm: #{e.message}"
     rescue SocketError, Timeout::Error, Errno::ECONNREFUSED, Errno::EHOSTUNREACH => e
       raise Error, e.message
     end
@@ -244,6 +245,15 @@ module ::SecondBrain
       SiteSetting.second_brain_term_llm_url.to_s.sub(%r{/+\z}, "")
     end
 
+    # Parse a URL, turning a misconfigured term-llm URL into our own Error (so the
+    # chat paints reply_failed) instead of an uncaught URI::InvalidURIError that
+    # would leave the post stuck on "Thinking…".
+    def parse_uri(url)
+      URI.parse(url)
+    rescue URI::InvalidURIError => e
+      raise Error, "invalid term-llm URL (#{url.inspect}): #{e.message}"
+    end
+
     def auth(request)
       key = SiteSetting.second_brain_term_llm_api_key
       request["Authorization"] = "Bearer #{key}" if key.present?
@@ -258,7 +268,7 @@ module ::SecondBrain
     end
 
     def post_json(path, body)
-      uri = URI.parse("#{base_url}#{path}")
+      uri = parse_uri("#{base_url}#{path}")
       http = build_http(uri, read_timeout: 120)
 
       request = Net::HTTP::Post.new(uri)

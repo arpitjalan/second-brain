@@ -24,6 +24,13 @@ export default apiInitializer((api) => {
     translatedLabel: "Make public",
     translatedTitle: "Convert this private chat into a public topic",
 
+    // Re-evaluate disabled() when we flip the in-flight flag below.
+    dependentKeys: ["topic.sbPublishing"],
+
+    disabled() {
+      return this.topic?.sbPublishing;
+    },
+
     displayed() {
       const topic = this.topic;
       if (!topic || !topic.isPrivateMessage) {
@@ -44,13 +51,21 @@ export default apiInitializer((api) => {
 
     async action() {
       const topic = this.topic;
+      // Block the double-tap that would fire a second convert (the first already
+      // made it public, so the second 404s with a scary error).
+      if (topic.sbPublishing) {
+        return;
+      }
+      topic.set("sbPublishing", true);
       try {
         const result = await ajax(
           `/second-brain/chats/${topic.id}/make_public`,
           { type: "POST" }
         );
+        // Leave the flag set — we're navigating away to the new public topic.
         window.location = result.url;
       } catch (error) {
+        topic.set("sbPublishing", false);
         popupAjaxError(error);
       }
     },

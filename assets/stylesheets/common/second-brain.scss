@@ -410,6 +410,19 @@ body.archetype-private_message {
     animation: sb-shimmer 1.3s infinite linear;
   }
 
+  &__error {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    text-align: center;
+    color: var(--primary-medium);
+    font-size: var(--font-down-1);
+    background: var(--secondary);
+  }
+
   // The card owns the border/radius now, so neutralize the bare frame look.
   .sb-widget-frame {
     width: 100%;
@@ -704,6 +717,14 @@ body.archetype-private_message {
     font-size: var(--font-down-2);
     color: var(--primary-medium);
   }
+}
+
+// Board empty / error note.
+.sb-board__note {
+  margin-top: 36px;
+  text-align: center;
+  color: var(--primary-medium);
+  font-size: var(--font-down-1);
 }
 
 @media (width <= 600px) {

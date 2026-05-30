@@ -48,14 +48,17 @@ module ::SecondBrain
 
       category_id = SiteSetting.second_brain_public_category.presence&.to_i
 
-      topic.convert_to_public_topic(Discourse.system_user, category_id: category_id)
-      topic.reload
-      raise Discourse::InvalidParameters, :topic if topic.private_message?
+      # Convert + mark-shared together so we never end up public-but-unmarked
+      # (invisible to the homepage "Shared by the family" board).
+      Topic.transaction do
+        topic.convert_to_public_topic(Discourse.system_user, category_id: category_id)
+        topic.reload
+        raise Discourse::InvalidParameters, :topic if topic.private_message?
 
-      # Mark it so the homepage "Shared by the family" board can list exactly the
-      # chats that were published (not arbitrary forum topics).
-      topic.custom_fields["second_brain_shared"] = true
-      topic.save_custom_fields(true)
+        # Marks exactly the chats that were published (not arbitrary forum topics).
+        topic.custom_fields["second_brain_shared"] = true
+        topic.save_custom_fields(true)
+      end
 
       render json: { url: topic.relative_url }
     end

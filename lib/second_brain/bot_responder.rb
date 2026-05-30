@@ -25,7 +25,11 @@ module ::SecondBrain
     # produce duplicates regardless of which runs first.
     def self.ensure_placeholder(topic)
       thinking = I18n.t("second_brain.thinking")
-      topic.posts.where(user_id: Bot.user.id, raw: thinking).order(:post_number).last ||
+      topic
+        .posts
+        .where(user_id: Bot.user.id, raw: thinking)
+        .order(post_number: :desc)
+        .first ||
         PostCreator.create!(Bot.user, topic_id: topic.id, raw: thinking, skip_validations: true)
     end
 
@@ -124,6 +128,9 @@ module ::SecondBrain
         public_state["status"] = "done"
       end
       @post.custom_fields[ASK_FIELD] = public_state.to_json
+      # The run is finished — drop the server-only state so it doesn't linger
+      # (and can't confuse a stray future resume).
+      @post.custom_fields.delete(STATE_FIELD)
       @post.save_custom_fields(true)
       maybe_title!(build_messages)
     end
@@ -445,6 +452,7 @@ module ::SecondBrain
     # The whole PM transcript, mapped to term-llm chat roles.
     def build_messages
       bot_id = Bot.user.id
+      thinking = I18n.t("second_brain.thinking")
 
       transcript =
         @topic
@@ -455,7 +463,7 @@ module ::SecondBrain
           .filter_map do |user_id, raw|
             content = raw.to_s.strip
             next if content.blank?
-            next if content == I18n.t("second_brain.thinking") # live placeholder
+            next if content == thinking # live placeholder
 
             { role: user_id == bot_id ? "assistant" : "user", content: content }
           end

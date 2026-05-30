@@ -14,11 +14,26 @@ import DButton from "discourse/ui-kit/d-button";
 // A few tappable starters that pre-fill the box — they teach a non-technical
 // family member what stan can do (research, planning, writing, widgets, Q&A).
 const STARTER_CHIPS = [
-  { label: "📅 Plan this week's dinners", prompt: "Plan some easy dinners for this week" },
-  { label: "🌐 Research a weekend trip", prompt: "Help me research a fun weekend trip for the family" },
-  { label: "✍️ Help me write a message", prompt: "Help me write a message — I'll give you the details." },
-  { label: "🧩 Make a chore-chart widget", prompt: "Make a simple chore chart widget for our family" },
-  { label: "💡 Explain something simply", prompt: "Explain something to me simply: " },
+  {
+    label: "📅 Plan this week's dinners",
+    prompt: "Plan some easy dinners for this week",
+  },
+  {
+    label: "🌐 Research a weekend trip",
+    prompt: "Help me research a fun weekend trip for the family",
+  },
+  {
+    label: "✍️ Help me write a message",
+    prompt: "Help me write a message — I'll give you the details.",
+  },
+  {
+    label: "🧩 Make a chore-chart widget",
+    prompt: "Make a simple chore chart widget for our family",
+  },
+  {
+    label: "💡 Explain something simply",
+    prompt: "Explain something to me simply: ",
+  },
 ];
 
 // The homepage. Type a message and go — the plugin creates the private chat
@@ -32,6 +47,8 @@ export default class Launcher extends Component {
   @tracked starting = false;
   @tracked recent = [];
   @tracked shared = [];
+  @tracked boardLoaded = false;
+  @tracked boardError = false;
   inputEl = null;
 
   get botUsername() {
@@ -42,7 +59,11 @@ export default class Launcher extends Component {
   get greeting() {
     const hour = new Date().getHours();
     const part =
-      hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+      hour < 12
+        ? "Good morning"
+        : hour < 18
+          ? "Good afternoon"
+          : "Good evening";
     const name = this.currentUser?.name || this.currentUser?.username;
     return name ? `${part}, ${name}` : part;
   }
@@ -59,6 +80,11 @@ export default class Launcher extends Component {
     return this.recent.length > 0 || this.shared.length > 0;
   }
 
+  // First-run nudge: loaded fine, signed in, but nothing to show yet.
+  get showEmptyState() {
+    return this.boardLoaded && !this.boardError && !this.hasBoard;
+  }
+
   // The "living brain" board: my recent chats + what the family shared.
   @action
   async loadBoard() {
@@ -69,8 +95,12 @@ export default class Launcher extends Component {
       const data = await ajax("/second-brain/home");
       this.recent = data.recent || [];
       this.shared = data.shared || [];
+      this.boardError = false;
     } catch {
-      // Non-fatal — the board just stays empty.
+      // Don't silently vanish — tell the user it failed (vs. genuinely empty).
+      this.boardError = true;
+    } finally {
+      this.boardLoaded = true;
     }
   }
 
@@ -131,8 +161,9 @@ export default class Launcher extends Component {
         {{#if this.currentUser}}{{this.greeting}}{{else}}Your second brain{{/if}}
       </h1>
       <p class="sb-launcher__subtitle">
-        Chat privately with {{this.botUsername}}. Press Enter to start — every chat
-        is private by default.
+        Chat privately with
+        {{this.botUsername}}. Press Enter to start — every chat is private by
+        default.
       </p>
 
       {{#if this.currentUser}}
@@ -172,6 +203,16 @@ export default class Launcher extends Component {
           {{/each}}
         </div>
 
+        {{#if this.boardError}}
+          <p class="sb-board__note">
+            Couldn't load your chats — refresh to retry.
+          </p>
+        {{else if this.showEmptyState}}
+          <p class="sb-board__note">
+            Your chats will show up here once you start one.
+          </p>
+        {{/if}}
+
         {{#if this.hasBoard}}
           <div class="sb-board">
             {{#if this.recent.length}}
@@ -191,7 +232,9 @@ export default class Launcher extends Component {
                 {{#each this.shared as |card|}}
                   <a class="sb-board__card" href={{card.url}}>
                     <span class="sb-board__title">{{card.title}}</span>
-                    <span class="sb-board__meta">{{card.username}} · {{card.age}}</span>
+                    <span class="sb-board__meta">{{card.username}}
+                      ·
+                      {{card.age}}</span>
                   </a>
                 {{/each}}
               </div>
