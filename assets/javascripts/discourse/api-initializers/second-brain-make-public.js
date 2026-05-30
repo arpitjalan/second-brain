@@ -1,6 +1,6 @@
-import { apiInitializer } from "discourse/lib/api";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
+import { apiInitializer } from "discourse/lib/api";
 
 // Adds a "Make public" button to the footer of a chat (a PM with the bot),
 // shown only to the chat's owner (or staff). It converts the PM into a public

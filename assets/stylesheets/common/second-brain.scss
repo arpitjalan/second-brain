@@ -179,10 +179,238 @@ body.archetype-private_message {
   margin: 16px 0 8px;
 }
 
-// =============================================================================
-// Interactive ask_user prompt — stan pauses to ask the user structured
-// questions; the form renders inline in stan's post.
-// =============================================================================
+// Tappable starter chips under the homepage box.
+.sb-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 16px;
+
+  &__chip {
+    border: 1px solid var(--primary-low);
+    background: var(--secondary);
+    color: var(--primary-high);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: var(--font-down-1);
+    cursor: pointer;
+    transition:
+      border-color 0.15s ease,
+      background 0.15s ease,
+      transform 0.1s ease;
+
+    &:hover {
+      border-color: var(--tertiary);
+      background: var(--primary-very-low);
+    }
+
+    &:active {
+      transform: scale(0.97);
+    }
+  }
+}
+
+// "stan is working" breathing indicator (streamed transiently as HTML).
+.sb-thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--primary-medium);
+  font-style: italic;
+
+  &__dots {
+    display: inline-flex;
+    gap: 4px;
+
+    span {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--tertiary);
+      animation: sb-bounce 1.2s infinite ease-in-out both;
+
+      &:nth-child(1) {
+        animation-delay: -0.24s;
+      }
+
+      &:nth-child(2) {
+        animation-delay: -0.12s;
+      }
+    }
+  }
+}
+
+@keyframes sb-bounce {
+  0%,
+  80%,
+  100% {
+    transform: scale(0.5);
+    opacity: 0.4;
+  }
+
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+// Widget card chrome — header bar (title + refresh/open/fullscreen) and a load
+// shimmer around the framed widget.
+.sb-widget-card {
+  margin: 12px 0;
+  border: 1px solid var(--primary-low);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--secondary);
+
+  &__bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--primary-very-low);
+    border-bottom: 1px solid var(--primary-low);
+  }
+
+  &__title {
+    font-size: var(--font-down-1);
+    font-weight: 600;
+    color: var(--primary-medium);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__actions {
+    display: flex;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+
+  &__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    color: var(--primary-medium);
+    cursor: pointer;
+
+    &:hover {
+      background: var(--primary-low);
+      color: var(--primary);
+    }
+
+    .d-icon {
+      font-size: var(--font-down-2);
+    }
+  }
+
+  &__frame-wrap {
+    position: relative;
+  }
+
+  &__shimmer {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      100deg,
+      var(--primary-very-low) 30%,
+      var(--primary-low) 50%,
+      var(--primary-very-low) 70%
+    );
+    background-size: 200% 100%;
+    animation: sb-shimmer 1.3s infinite linear;
+  }
+
+  // The card owns the border/radius now, so neutralize the bare frame look.
+  .sb-widget-frame {
+    width: 100%;
+    height: 480px;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+  }
+
+  &:fullscreen {
+    border-radius: 0;
+
+    .sb-widget-card__frame-wrap {
+      height: calc(100vh - 41px); // viewport minus the bar
+    }
+
+    .sb-widget-frame {
+      height: 100%;
+    }
+  }
+}
+
+@keyframes sb-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+// One-tap copy button on stan's answers.
+.sb-has-copy {
+  position: relative;
+}
+
+.sb-copy {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: var(--secondary);
+  border-radius: 6px;
+  color: var(--primary-medium);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.15s ease,
+    color 0.15s ease;
+
+  &:hover {
+    color: var(--primary);
+  }
+
+  &--done {
+    color: var(--success);
+    opacity: 1;
+  }
+
+  .d-icon {
+    font-size: var(--font-down-1);
+  }
+}
+
+.sb-has-copy:hover .sb-copy,
+.sb-copy:focus {
+  opacity: 1;
+}
+
+// Touch devices have no hover — keep the copy button gently visible.
+@media (hover: none) {
+  .sb-copy {
+    opacity: 0.5;
+  }
+}
+
+// Interactive ask_user prompt — the inline question form in stan's post.
 .sb-askuser {
   margin: 10px 0 4px;
 

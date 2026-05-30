@@ -1,12 +1,25 @@
 import Component from "@glimmer/component";
 import { tracked } from "@glimmer/tracking";
+import { fn } from "@ember/helper";
 import { on } from "@ember/modifier";
 import { action } from "@ember/object";
+import didInsert from "@ember/render-modifiers/modifiers/did-insert";
+import { next } from "@ember/runloop";
 import { service } from "@ember/service";
-import DButton from "discourse/components/d-button";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import DiscourseURL from "discourse/lib/url";
+import DButton from "discourse/ui-kit/d-button";
+
+// A few tappable starters that pre-fill the box — they teach a non-technical
+// family member what stan can do (research, planning, writing, widgets, Q&A).
+const STARTER_CHIPS = [
+  { label: "📅 Plan this week's dinners", prompt: "Plan some easy dinners for this week" },
+  { label: "🌐 Research a weekend trip", prompt: "Help me research a fun weekend trip for the family" },
+  { label: "✍️ Help me write a message", prompt: "Help me write a message — I'll give you the details." },
+  { label: "🧩 Make a chore-chart widget", prompt: "Make a simple chore chart widget for our family" },
+  { label: "💡 Explain something simply", prompt: "Explain something to me simply: " },
+];
 
 // The homepage. Type a message and go — the plugin creates the private chat
 // (a PM with the bot, auto-titled) and navigates into Discourse's message view,
@@ -17,9 +30,23 @@ export default class Launcher extends Component {
 
   @tracked message = "";
   @tracked starting = false;
+  inputEl = null;
 
   get botUsername() {
     return this.siteSettings.second_brain_bot_username || "stan";
+  }
+
+  // Time-of-day greeting, personalized when we know who's here.
+  get greeting() {
+    const hour = new Date().getHours();
+    const part =
+      hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+    const name = this.currentUser?.name || this.currentUser?.username;
+    return name ? `${part}, ${name}` : part;
+  }
+
+  get chips() {
+    return STARTER_CHIPS;
   }
 
   get myChatsUrl() {
@@ -27,8 +54,26 @@ export default class Launcher extends Component {
   }
 
   @action
+  registerInput(el) {
+    this.inputEl = el;
+  }
+
+  @action
   updateMessage(event) {
     this.message = event.target.value;
+  }
+
+  @action
+  useChip(prompt) {
+    this.message = prompt;
+    // Focus after the value re-renders so the cursor lands at the end.
+    next(() => {
+      const el = this.inputEl;
+      if (el) {
+        el.focus();
+        el.selectionStart = el.selectionEnd = el.value.length;
+      }
+    });
   }
 
   @action
@@ -61,7 +106,9 @@ export default class Launcher extends Component {
 
   <template>
     <div class="sb-launcher">
-      <h1 class="sb-launcher__title">Your second brain</h1>
+      <h1 class="sb-launcher__title">
+        {{#if this.currentUser}}{{this.greeting}}{{else}}Your second brain{{/if}}
+      </h1>
       <p class="sb-launcher__subtitle">
         Chat privately with {{this.botUsername}}. Press Enter to start — every chat
         is private by default.
@@ -71,10 +118,12 @@ export default class Launcher extends Component {
         <div class="sb-starter">
           <textarea
             class="sb-starter__input"
+            aria-label="Message {{this.botUsername}}"
             placeholder="Message {{this.botUsername}}…"
             rows="3"
             value={{this.message}}
             disabled={{this.starting}}
+            {{didInsert this.registerInput}}
             {{on "input" this.updateMessage}}
             {{on "keydown" this.handleKeydown}}
           ></textarea>
@@ -88,6 +137,18 @@ export default class Launcher extends Component {
               class="btn-primary"
             />
           </div>
+        </div>
+
+        <div class="sb-chips">
+          {{#each this.chips as |chip|}}
+            <button
+              type="button"
+              class="sb-chips__chip"
+              {{on "click" (fn this.useChip chip.prompt)}}
+            >
+              {{chip.label}}
+            </button>
+          {{/each}}
         </div>
       {{/if}}
     </div>
