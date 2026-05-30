@@ -58,15 +58,20 @@ export default class Launcher extends Component {
     return this.siteSettings.second_brain_bot_username || "stan";
   }
 
-  // Time-of-day greeting, personalized when we know who's here.
+  // Time-of-day greeting (local time), personalized when we know who's here.
+  // Late night reads as night, not "morning".
   get greeting() {
     const hour = new Date().getHours();
-    const part =
-      hour < 12
-        ? "Good morning"
-        : hour < 18
-          ? "Good afternoon"
-          : "Good evening";
+    let part;
+    if (hour < 5 || hour >= 23) {
+      part = "Working late"; // 23:00–04:59
+    } else if (hour < 12) {
+      part = "Good morning"; // 05:00–11:59
+    } else if (hour < 17) {
+      part = "Good afternoon"; // 12:00–16:59
+    } else {
+      part = "Good evening"; // 17:00–22:59
+    }
     // First name only (e.g. "Arpit Jalan" → "Arpit"), falling back to username.
     const firstName = this.currentUser?.name?.trim().split(/\s+/)[0];
     const name = firstName || this.currentUser?.username;
@@ -180,8 +185,9 @@ export default class Launcher extends Component {
         {{#if this.currentUser}}{{this.greeting}}{{else}}Your second brain{{/if}}
       </h1>
       <p class="sb-launcher__subtitle">
-        Chat privately with
-        {{this.botUsername}}. Every chat is private by default.
+        Chat with
+        {{this.botUsername}}
+        about anything. It stays private, just for you.
       </p>
 
       {{#if this.currentUser}}
