@@ -43,28 +43,34 @@ module ::SecondBrain
           skip_validations: true,
         )
 
-      final = +""
+      final_text = +""
+      final_tools = []
       last_update = monotonic
+      last_tool_sig = nil
 
       begin
-        final =
+        result =
           TermLlmClient
             .new
-            .stream_respond(messages) do |accumulated|
+            .stream_respond(messages) do |text, tools|
               now = monotonic
-              if now - last_update >= STREAM_THROTTLE && accumulated.strip.present?
-                # Live paint only — no DB write, no refetch. The client paints
-                # this HTML into the post's .cooked element.
-                publish_stream(placeholder, accumulated, done: false)
+              tool_sig = tools.map { |t| [t[:name], t[:done]] }
+              # Publish immediately when a tool starts/finishes; throttle text.
+              if tool_sig != last_tool_sig || now - last_update >= STREAM_THROTTLE
+                markdown = render_reply(text, tools)
+                publish_stream(placeholder, markdown, done: false) if markdown.present?
                 last_update = now
+                last_tool_sig = tool_sig
               end
             end
-            .to_s
+        final_text = result[:text].to_s
+        final_tools = result[:tools] || []
       rescue TermLlmClient::Error => e
         Rails.logger.warn("second-brain: reply failed: #{e.message}")
-        final = I18n.t("second_brain.errors.reply_failed")
+        final_text = I18n.t("second_brain.errors.reply_failed")
       end
 
+      final = render_reply(final_text, final_tools)
       final = I18n.t("second_brain.empty_reply") if final.blank?
 
       # Persist the final answer once (no per-token revisions), then tell the
@@ -82,6 +88,34 @@ module ::SecondBrain
 
     def monotonic
       Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    end
+
+    # Reply markdown: a collapsible tool-call summary (when tools ran) above the
+    # answer, mirroring term-llm's own UI.
+    def render_reply(text, tools)
+      parts = []
+      parts << tool_summary(tools) if tools.present?
+      parts << text if text.to_s.strip.present?
+      parts.join("\n\n")
+    end
+
+    def tool_summary(tools)
+      title =
+        if tools.all? { |t| t[:done] }
+          "🔧 ran #{tools.size} tool#{"s" if tools.size != 1}"
+        else
+          "🔧 working…"
+        end
+
+      lines =
+        tools.map do |t|
+          mark = t[:done] ? (t[:success] == false ? "⚠️" : "✓") : "…"
+          label = t[:name].to_s
+          label += " `#{t[:detail]}`" if t[:detail].present?
+          "- #{label} #{mark}"
+        end
+
+      "[details=\"#{title}\"]\n#{lines.join("\n")}\n[/details]"
     end
 
     # Publish a partial/final cooked chunk to the chat's participants only

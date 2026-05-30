@@ -36,11 +36,13 @@ module ::SecondBrain
       extract_output_text(post_json("/v1/responses", body))
     end
 
-    # Streaming agentic reply via /v1/responses (stream: true). Yields the
-    # accumulated text so far on each token delta; returns the final text.
-    # SSE frames look like:
-    #   event: response.output_text.delta
-    #   data: {"delta":"...","output_index":0,"sequence_number":N}
+    # Streaming agentic reply via /v1/responses (stream: true). Yields
+    # (text, tools) on each update: `text` is the accumulated answer, `tools` is
+    # an array of { name:, detail:, done:, success: } for tool calls (shell, web
+    # search, …). Returns { text:, tools: }. Relevant SSE events:
+    #   response.output_text.delta -> data.delta            (answer tokens)
+    #   response.tool_exec.start   -> tool_name/arguments/info/call_id
+    #   response.tool_exec.end     -> tool_name/success/call_id
     def stream_respond(messages)
       raise NotConfigured if SiteSetting.second_brain_term_llm_url.blank?
 
@@ -65,7 +67,8 @@ module ::SecondBrain
       request["Authorization"] = "Bearer #{key}" if key.present?
       request.body = body.to_json
 
-      full = +""
+      text = +""
+      tools = []
       buffer = +""
 
       begin
@@ -80,13 +83,31 @@ module ::SecondBrain
               frame = buffer.slice!(0..index + 1)
               event, data = parse_sse_frame(frame)
               next if data.nil? || data == "[DONE]"
-              next unless event == "response.output_text.delta"
 
-              delta = (JSON.parse(data)["delta"] rescue nil)
-              next if delta.nil?
-
-              full << delta
-              yield full if block_given?
+              case event
+              when "response.output_text.delta"
+                delta = (JSON.parse(data)["delta"] rescue nil)
+                next if delta.nil?
+                text << delta
+                yield text, tools if block_given?
+              when "response.tool_exec.start"
+                j = (JSON.parse(data) rescue {})
+                tools << {
+                  call_id: j["call_id"],
+                  name: j["tool_name"].to_s,
+                  detail: tool_detail(j["tool_arguments"], j["tool_info"]),
+                  done: false,
+                  success: nil,
+                }
+                yield text, tools if block_given?
+              when "response.tool_exec.end"
+                j = (JSON.parse(data) rescue {})
+                if (t = tools.find { |x| x[:call_id] == j["call_id"] })
+                  t[:done] = true
+                  t[:success] = j["success"]
+                end
+                yield text, tools if block_given?
+              end
             end
           end
         end
@@ -94,7 +115,7 @@ module ::SecondBrain
         raise Error, e.message
       end
 
-      full.strip
+      { text: text.strip, tools: tools }
     end
 
     # Simpler non-agentic completion via /v1/chat/completions (no server tools).
@@ -111,6 +132,15 @@ module ::SecondBrain
     end
 
     private
+
+    # A short human label for a tool call: the command/query/etc., else the
+    # info description term-llm provides.
+    def tool_detail(args_json, info)
+      args = (JSON.parse(args_json) rescue nil) || {}
+      detail = args["command"] || args["query"] || args["url"] || args["path"]
+      detail ||= info.to_s.sub(/\A\(/, "").sub(/\)\z/, "")
+      detail.to_s.strip.presence
+    end
 
     # Parse one SSE frame into [event, data]. Frames are "event:" / "data:" /
     # "id:" lines; comments and ids are ignored.

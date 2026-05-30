@@ -19,16 +19,6 @@ export default apiInitializer((api) => {
     const postStream = topicController?.model?.postStream;
     const post = postStream?.findLoadedPost?.(data.post_id);
 
-    // Temporary diagnostic — remove once streaming is confirmed.
-    // eslint-disable-next-line no-console
-    console.log(
-      "[second-brain] stream chunk",
-      "post=" + data.post_id,
-      "html=" + data.html.length,
-      "done=" + !!data.done,
-      "postFound=" + !!post
-    );
-
     if (post) {
       post.set("cooked", data.html);
     }
