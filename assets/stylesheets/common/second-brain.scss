@@ -747,6 +747,15 @@ body.archetype-private_message {
   }
 }
 
+// When collapsed, the wrapper stays in the DOM as an empty div (kept for the
+// slide animation) — drop our float decorations so no sliver line remains.
+#main-outlet-wrapper .sidebar-wrapper:not(:has(*)) {
+  margin: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+
 // Gentle entrance for the homepage hero.
 @keyframes sb-rise {
   from {
