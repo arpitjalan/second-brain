@@ -428,21 +428,48 @@ module ::SecondBrain
       "spawn_agent" => "Thinking it through",
     }.freeze
 
-    # Label for the breathing indicator: name the running tool, else "Thinking".
+    # Label for the breathing indicator: name the running tool, else nil so the
+    # pill shows (and cycles) a generic "thinking" word.
     def active_label(tools)
       running = tools.reverse.find { |t| !t[:done] }
-      return "Thinking" if running.nil?
+      return nil if running.nil?
       TOOL_VERBS[running[:name].to_s] || "Working"
     end
 
+    # Playful synonyms for the generic "thinking" state (no tool running yet). We
+    # pick one at random per render so even a quick turn varies, and the client
+    # (second-brain-thinking.js) rotates among them every 10s on longer turns.
+    THINKING_WORDS = [
+      "Thinking",
+      "Pondering",
+      "Mulling it over",
+      "Noodling on it",
+      "Working it out",
+      "Connecting the dots",
+      "Percolating",
+      "Ruminating",
+      "Untangling this",
+      "Putting it together",
+    ].freeze
+
     # A small animated "stan is working" pill, built as HTML (not markdown) so the
-    # dots + label survive on the client. Transient — never persisted.
+    # dots + label survive on the client. Transient — never persisted. With no tool
+    # label it shows a random "thinking" word and is marked .sb-thinking--cycle (+
+    # the word list in data-sb-words) so the client rotates it.
     def thinking_html(label)
-      text = label.presence || "Thinking"
+      cycle = label.blank?
+      text = label.presence || THINKING_WORDS.sample
+      classes = cycle ? "sb-thinking sb-thinking--cycle" : "sb-thinking"
+      data =
+        if cycle
+          " data-sb-words=\"#{ERB::Util.html_escape(THINKING_WORDS.join("|"))}\""
+        else
+          ""
+        end
       dots =
         "<span class=\"sb-thinking__dots\">" \
           "<span></span><span></span><span></span></span>"
-      "<div class=\"sb-thinking\">#{dots}" \
+      "<div class=\"#{classes}\"#{data}>#{dots}" \
         "<span class=\"sb-thinking__label\">#{ERB::Util.html_escape(text)}</span></div>"
     end
 
