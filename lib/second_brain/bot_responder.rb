@@ -189,8 +189,9 @@ module ::SecondBrain
               markdown = render_reply(full_text, all_tools)
               publish_stream(post, markdown, done: false) if markdown.present?
             else
-              # No answer text yet — name what stan is doing right now.
-              publish_cooked(post, thinking_html(active_label(all_tools)), done: false)
+              # No answer text yet — stream the tool calls as they run, with the
+              # live "working" pill beneath them.
+              publish_cooked(post, streaming_html(all_tools), done: false)
             end
             last_update = now
             last_tool_sig = tool_sig
@@ -443,6 +444,17 @@ module ::SecondBrain
           "<span></span><span></span><span></span></span>"
       "<div class=\"sb-thinking\">#{dots}" \
         "<span class=\"sb-thinking__label\">#{ERB::Util.html_escape(text)}</span></div>"
+    end
+
+    # The live view before any answer text: the tool calls as they run (expanded so
+    # the user watches stan work — the bbcode otherwise renders them collapsed),
+    # with the "working" pill beneath. The morph keeps the user's collapse choice if
+    # they toggle the <details> mid-stream.
+    def streaming_html(tools)
+      pill = thinking_html(active_label(tools))
+      return pill if tools.blank?
+      cooked = PrettyText.cook(tool_summary(tools)).sub("<details", "<details open")
+      "#{cooked}#{pill}"
     end
 
     def stream_user_ids
