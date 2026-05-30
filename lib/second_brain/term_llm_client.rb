@@ -24,20 +24,26 @@ module ::SecondBrain
     class SnapshotRequired < Error
     end
 
+    # Bound to an Agent (its endpoint/token/model) when given; otherwise falls
+    # back to the global term-llm settings (the family agent).
+    def initialize(agent = nil)
+      @agent = agent
+    end
+
     def self.configured?
       SiteSetting.second_brain_term_llm_url.present?
     end
 
     # Agentic, non-streaming reply via /v1/responses with server tools enabled.
     def respond(messages)
-      raise NotConfigured if SiteSetting.second_brain_term_llm_url.blank?
+      raise NotConfigured if base_url.blank?
 
       body = {
         input: messages.map { |m| { type: "message", role: m[:role], content: m[:content] } },
         include_server_tools: true,
         stream: false,
       }
-      model = SiteSetting.second_brain_term_llm_model
+      model = @agent&.model.presence || SiteSetting.second_brain_term_llm_model
       body[:model] = model if model.present?
 
       extract_output_text(post_json("/v1/responses", body))
@@ -50,7 +56,7 @@ module ::SecondBrain
     # and we disconnect (the run stays alive server-side, keyed by session_id).
     # `session_id` lets a later request answer/resume the run (see submit_ask_user).
     def stream_respond(messages, session_id: nil, &block)
-      raise NotConfigured if SiteSetting.second_brain_term_llm_url.blank?
+      raise NotConfigured if base_url.blank?
 
       uri = parse_uri("#{base_url}/v1/responses")
       request = Net::HTTP::Post.new(uri)
@@ -64,7 +70,7 @@ module ::SecondBrain
         include_server_tools: true,
         stream: true,
       }
-      model = SiteSetting.second_brain_term_llm_model
+      model = @agent&.model.presence || SiteSetting.second_brain_term_llm_model
       body[:model] = model if model.present?
       request.body = body.to_json
 
@@ -75,7 +81,7 @@ module ::SecondBrain
     # after `after` (a sequence number). Used to stream the continuation once an
     # ask_user prompt has been answered. Same yield/return shape as stream_respond.
     def stream_events(response_id:, after:, &block)
-      raise NotConfigured if SiteSetting.second_brain_term_llm_url.blank?
+      raise NotConfigured if base_url.blank?
 
       uri = parse_uri("#{base_url}/v1/responses/#{response_id}/events?after=#{after.to_i}")
       request = Net::HTTP::Get.new(uri)
@@ -89,7 +95,7 @@ module ::SecondBrain
     # Returns the parsed response ({ "status", "answers", "summary" }).
     # Raises Expired on 404/409 (run gone / already answered).
     def submit_ask_user(session_id:, call_id:, answers: nil, cancelled: false)
-      raise NotConfigured if SiteSetting.second_brain_term_llm_url.blank?
+      raise NotConfigured if base_url.blank?
 
       body = cancelled ? { call_id: call_id, cancelled: true } : { call_id: call_id, answers: answers }
       uri = parse_uri("#{base_url}/v1/sessions/#{session_id}/ask_user")
@@ -117,10 +123,10 @@ module ::SecondBrain
 
     # Simpler non-agentic completion via /v1/chat/completions (used for titling).
     def complete(messages)
-      raise NotConfigured if SiteSetting.second_brain_term_llm_url.blank?
+      raise NotConfigured if base_url.blank?
 
       body = { messages: messages, stream: false }
-      model = SiteSetting.second_brain_term_llm_model
+      model = @agent&.model.presence || SiteSetting.second_brain_term_llm_model
       body[:model] = model if model.present?
 
       response = post_json("/v1/chat/completions", body)
@@ -167,17 +173,17 @@ module ::SecondBrain
 
                 case event
                 when "response.created"
-                  rid = (JSON.parse(data).dig("response", "id") rescue nil)
+                  rid = JSON.parse(data).dig("response", "id") rescue nil
                   response_id = rid if rid
                 when "response.output_text.delta"
-                  delta = (JSON.parse(data)["delta"] rescue nil)
+                  delta = JSON.parse(data)["delta"] rescue nil
                   next if delta.nil?
                   text << delta
                   yield text, tools if block_given?
                 when "response.tool_exec.start"
-                  j = (JSON.parse(data) rescue {})
+                  j = JSON.parse(data) rescue {}
                   next if j["tool_name"].to_s == "ask_user" # not shown as a normal tool
-                  args = (JSON.parse(j["tool_arguments"].to_s) rescue nil)
+                  args = JSON.parse(j["tool_arguments"].to_s) rescue nil
                   tools << {
                     call_id: j["call_id"],
                     name: j["tool_name"].to_s,
@@ -188,14 +194,14 @@ module ::SecondBrain
                   }
                   yield text, tools if block_given?
                 when "response.tool_exec.end"
-                  j = (JSON.parse(data) rescue {})
+                  j = JSON.parse(data) rescue {}
                   if (t = tools.find { |x| x[:call_id] == j["call_id"] })
                     t[:done] = true
                     t[:success] = j["success"]
                     yield text, tools if block_given?
                   end
                 when "response.ask_user.prompt"
-                  j = (JSON.parse(data) rescue {})
+                  j = JSON.parse(data) rescue {}
                   ask_user = { call_id: j["call_id"], questions: j["questions"] }
                   throw :sb_done # disconnect; the run stays alive server-side
                 end
@@ -244,7 +250,7 @@ module ::SecondBrain
     end
 
     def base_url
-      SiteSetting.second_brain_term_llm_url.to_s.sub(%r{/+\z}, "")
+      (@agent&.url.presence || SiteSetting.second_brain_term_llm_url).to_s.sub(%r{/+\z}, "")
     end
 
     # Parse a URL, turning a misconfigured term-llm URL into our own Error (so the
@@ -257,7 +263,7 @@ module ::SecondBrain
     end
 
     def auth(request)
-      key = SiteSetting.second_brain_term_llm_api_key
+      key = @agent&.token.presence || SiteSetting.second_brain_term_llm_api_key
       request["Authorization"] = "Bearer #{key}" if key.present?
     end
 

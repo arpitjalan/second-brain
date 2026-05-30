@@ -11,7 +11,8 @@ module ::SecondBrain
       message = params[:message].to_s.strip
       raise Discourse::InvalidParameters, :message if message.blank?
 
-      unless TermLlmClient.configured?
+      agent = create_agent
+      unless agent&.configured?
         return render_json_error I18n.t("second_brain.errors.not_configured"), status: 422
       end
 
@@ -21,14 +22,14 @@ module ::SecondBrain
           title: derive_title(message),
           raw: message,
           archetype: Archetype.private_message,
-          target_usernames: Bot.user.username,
+          target_usernames: agent.user.username,
           skip_validations: true,
         )
 
-      # Spawn stan's "Thinking…" placeholder now so the chat is alive the instant
+      # Spawn the bot's "Thinking…" placeholder now so the chat is alive the instant
       # the member lands in the PM — instead of dead-air until the reply job
       # (Sidekiq pickup) gets around to creating it.
-      BotResponder.ensure_placeholder(post.topic)
+      BotResponder.ensure_placeholder(post.topic, agent)
 
       render json: { url: post.topic.relative_url }
     end
@@ -43,7 +44,7 @@ module ::SecondBrain
 
       # Only a *bot chat* may be published — never an arbitrary human-to-human PM
       # the caller happens to participate in.
-      unless topic.topic_allowed_users.exists?(user_id: Bot.user.id)
+      unless topic.topic_allowed_users.where(user_id: Agent.bot_user_ids).exists?
         raise Discourse::InvalidAccess
       end
 
@@ -72,21 +73,24 @@ module ::SecondBrain
     # Homepage "living brain" board: the member's recent chats with the bot, and
     # a column of interesting public topics worth a look.
     def home
-      bot_id = Bot.user.id
+      agent_ids = Agent.bot_user_ids
+      bot_ids_sql = agent_ids_sql(agent_ids)
       limit = SiteSetting.second_brain_board_topics
 
+      # The member's recent chats with any agent bot they participate in (the
+      # sb_me join keeps it to their own chats — personal agents stay private).
       recent =
         Topic
           .where(archetype: Archetype.private_message, deleted_at: nil)
           .joins("JOIN topic_allowed_users sb_me ON sb_me.topic_id = topics.id AND sb_me.user_id = #{current_user.id.to_i}")
-          .joins("JOIN topic_allowed_users sb_bot ON sb_bot.topic_id = topics.id AND sb_bot.user_id = #{bot_id.to_i}")
+          .joins("JOIN topic_allowed_users sb_bot ON sb_bot.topic_id = topics.id AND sb_bot.user_id IN (#{bot_ids_sql})")
           .includes(:user)
           .order(bumped_at: :desc)
           .limit(limit)
 
       render json: {
         recent: recent.map { |t| topic_card(t) },
-        interesting: interesting_topics(bot_id, limit).map { |t| topic_card(t) },
+        interesting: interesting_topics(agent_ids, limit).map { |t| topic_card(t) },
       }
     end
 
@@ -115,8 +119,9 @@ module ::SecondBrain
         answers = cancelled ? nil : build_answers(public_state["questions"] || [], params[:answers])
 
         begin
+          agent = Agent.for_topic(post.topic) || Agent.family
           result =
-            TermLlmClient.new.submit_ask_user(
+            agent.client.submit_ask_user(
               session_id: server_state["session_id"],
               call_id: public_state["call_id"],
               answers: answers,
@@ -126,7 +131,7 @@ module ::SecondBrain
           public_state["status"] = "expired"
           post.custom_fields["second_brain_askuser"] = public_state.to_json
           post.save_custom_fields(true)
-          return render json: { status: "expired" }, status: 410
+          return render json: { status: "expired" }, status: :gone
         rescue TermLlmClient::Error => e
           return render_json_error e.message, status: 502
         end
@@ -144,11 +149,24 @@ module ::SecondBrain
 
     private
 
+    # Which agent a new chat is with. Phase 1: always the shared family agent.
+    # (Phase 2 reads params[:agent] + enforces owner-private access.)
+    def create_agent
+      Agent.family
+    end
+
+    # A safe `IN (...)` list of agent bot user ids (ints; never empty).
+    def agent_ids_sql(ids)
+      list = Array(ids).map(&:to_i)
+      list = [Bot.user.id.to_i] if list.empty?
+      list.join(",")
+    end
+
     # The homepage's right column: public topics worth a look, prioritized
     # shared (published bot chats) → agent-created → hot/recently-active, deduped
     # and capped at `limit`. The last tier is a never-empty fallback. Only topics
     # the member can see are included.
-    def interesting_topics(bot_id, limit)
+    def interesting_topics(agent_ids, limit)
       picked = []
       seen = Set.new
 
@@ -173,9 +191,9 @@ module ::SecondBrain
           .limit(limit),
       )
 
-      # 2) Topics the agent created on the forum.
+      # 2) Topics any agent created on the forum.
       if picked.size < limit
-        gather.call(public_topics.where(user_id: bot_id).order(created_at: :desc).limit(limit))
+        gather.call(public_topics.where(user_id: agent_ids).order(created_at: :desc).limit(limit))
       end
 
       # 3) Hot / recently-active topics — the fallback so the column is never empty.

@@ -30,11 +30,12 @@ module ::SecondBrain
     # Lists the family's term-llm widgets (for the sidebar). Pulls the JSON
     # status from term-llm and returns mount/title/state for each.
     def index
-      base_url = SiteSetting.second_brain_term_llm_url.to_s.sub(%r{/+\z}, "")
+      agent = widget_agent
+      base_url = agent.url.to_s.sub(%r{/+\z}, "")
       return render json: { widgets: [] } if base_url.blank?
 
-      upstream = fetch_following_redirects(URI.parse("#{base_url}/admin/widgets/status"))
-      data = (JSON.parse(upstream.body) rescue {})
+      upstream = fetch_following_redirects(URI.parse("#{base_url}/admin/widgets/status"), agent)
+      data = JSON.parse(upstream.body) rescue {}
       widgets =
         Array(data["widgets"]).map do |w|
           {
@@ -51,7 +52,8 @@ module ::SecondBrain
     end
 
     def show
-      base_url = SiteSetting.second_brain_term_llm_url.to_s.sub(%r{/+\z}, "")
+      agent = widget_agent
+      base_url = agent.url.to_s.sub(%r{/+\z}, "")
       raise Discourse::NotFound if base_url.blank?
 
       path = params[:path].to_s
@@ -63,7 +65,7 @@ module ::SecondBrain
       target = +"#{base_url}/widgets/#{path}"
       target << "?#{request.query_string}" if request.query_string.present?
 
-      upstream = fetch_following_redirects(URI.parse(target))
+      upstream = fetch_following_redirects(URI.parse(target), agent)
 
       content_type = upstream["content-type"].presence || "application/octet-stream"
       response.headers["Cache-Control"] = "no-store"
@@ -75,14 +77,20 @@ module ::SecondBrain
 
     private
 
+    # Which agent's widgets this request is for. Phase 1: the shared family agent.
+    # (Phase 2 reads an <agent> path segment + access-checks it against the user.)
+    def widget_agent
+      Agent.family
+    end
+
     # Widget routes often 3xx (trailing-slash / index normalization); follow the
     # redirects server-side, carrying the token on every hop, so the iframe gets
     # the final 200 — not a "Temporary Redirect" body. Redirects must stay on the
     # exact term-llm origin (an SSRF guard) — pin scheme+host+port, not just host,
     # so a redirect can't downgrade to http or hop to another port on the same host
     # and leak the Bearer token there.
-    def fetch_following_redirects(uri)
-      key = SiteSetting.second_brain_term_llm_api_key
+    def fetch_following_redirects(uri, agent)
+      key = agent.token
       allowed_origin = [uri.scheme, uri.host, uri.port]
 
       5.times do

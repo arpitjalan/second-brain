@@ -13,8 +13,8 @@ module ::SecondBrain
       topic = post.topic
       return unless topic&.private_message?
       return unless TermLlmClient.configured?
-      return if Bot.user?(post.user_id) # never reply to ourselves (loop guard)
-      return unless topic.topic_allowed_users.exists?(user_id: Bot.user.id)
+      return if Agent.bot_user_ids.include?(post.user_id) # never reply to an agent's own post
+      return unless topic.topic_allowed_users.where(user_id: Agent.bot_user_ids).exists?
 
       Jobs.enqueue(:second_brain_reply, post_id: post.id)
     end
@@ -25,21 +25,23 @@ module ::SecondBrain
     # request/job boundary — without it, the job's SELECT can run before the
     # controller's INSERT commits, so both create one and the chat ends up with
     # a second, orphaned "Thinking…" post that never resolves.
-    def self.ensure_placeholder(topic)
+    def self.ensure_placeholder(topic, agent = Agent.for_topic(topic))
       thinking = I18n.t("second_brain.thinking")
+      bot = agent&.user || Bot.user
       DistributedMutex.synchronize("second-brain-placeholder-#{topic.id}") do
         topic
           .posts
-          .where(user_id: Bot.user.id, raw: thinking)
+          .where(user_id: bot.id, raw: thinking)
           .order(post_number: :desc)
           .first ||
-          PostCreator.create!(Bot.user, topic_id: topic.id, raw: thinking, skip_validations: true)
+          PostCreator.create!(bot, topic_id: topic.id, raw: thinking, skip_validations: true)
       end
     end
 
     def initialize(post)
       @post = post
       @topic = post.topic
+      @agent = Agent.for_topic(@topic) || Agent.family
     end
 
     # Minimum seconds between live post updates while streaming.
@@ -65,7 +67,7 @@ module ::SecondBrain
 
       # Reuse the placeholder the create controller already spawned (or make one
       # if this is a follow-up turn) and stream term-llm's answer into it.
-      placeholder = self.class.ensure_placeholder(@topic)
+      placeholder = self.class.ensure_placeholder(@topic, @agent)
 
       # Show a breathing, self-narrating indicator until the answer starts.
       publish_cooked(placeholder, thinking_html(nil), done: false)
@@ -76,7 +78,7 @@ module ::SecondBrain
       result =
         begin
           stream_and_paint(placeholder, "", []) do |on_update|
-            TermLlmClient.new.stream_respond(messages, session_id: session_id, &on_update)
+            @agent.client.stream_respond(messages, session_id: session_id, &on_update)
           end
         rescue TermLlmClient::Error => e
           Rails.logger.warn("second-brain: reply failed: #{e.message}")
@@ -109,7 +111,7 @@ module ::SecondBrain
       result =
         begin
           stream_and_paint(@post, pre_text, []) do |on_update|
-            TermLlmClient.new.stream_events(response_id: response_id, after: after, &on_update)
+            @agent.client.stream_events(response_id: response_id, after: after, &on_update)
           end
         rescue TermLlmClient::Error => e
           Rails.logger.warn("second-brain: resume failed: #{e.class}: #{e.message}")
@@ -298,7 +300,7 @@ module ::SecondBrain
     PROXY_WIDGETS = "/second-brain/widgets/"
 
     def proxy_widget_links(markdown)
-      base_url = SiteSetting.second_brain_term_llm_url.to_s.sub(%r{/+\z}, "")
+      base_url = @agent.url.to_s.sub(%r{/+\z}, "")
       return markdown if base_url.blank?
 
       path = (URI.parse(base_url).path.presence rescue nil).to_s
@@ -505,7 +507,7 @@ module ::SecondBrain
         { role: "user", content: first_user[:content].to_s.truncate(500) },
       ]
 
-      title = TermLlmClient.new.complete(prompt).to_s.strip.delete('"').tr("\n", " ").strip
+      title = @agent.client.complete(prompt).to_s.strip.delete('"').tr("\n", " ").strip
       title = title.truncate(80)
       return if title.length < 2
 
@@ -518,7 +520,7 @@ module ::SecondBrain
 
     # The whole PM transcript, mapped to term-llm chat roles.
     def build_messages
-      bot_id = Bot.user.id
+      bot_id = @agent.bot_user_id
       thinking = I18n.t("second_brain.thinking")
 
       transcript =

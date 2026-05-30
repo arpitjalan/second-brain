@@ -33,6 +33,7 @@ register_modifier(:custom_homepage_enabled) { true }
 # we require everything explicitly (no Zeitwerk conflict — not on an autoload path).
 require_relative "lib/second_brain/term_llm_client"
 require_relative "lib/second_brain/bot"
+require_relative "lib/second_brain/agent"
 require_relative "lib/second_brain/bot_responder"
 
 after_initialize do
