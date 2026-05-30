@@ -27,6 +27,29 @@ module ::SecondBrain
       "frame-ancestors 'self'",
     ].join("; ").freeze
 
+    # Lists the family's term-llm widgets (for the sidebar). Pulls the JSON
+    # status from term-llm and returns mount/title/state for each.
+    def index
+      base_url = SiteSetting.second_brain_term_llm_url.to_s.sub(%r{/+\z}, "")
+      return render json: { widgets: [] } if base_url.blank?
+
+      upstream = fetch_following_redirects(URI.parse("#{base_url}/admin/widgets/status"))
+      data = (JSON.parse(upstream.body) rescue {})
+      widgets =
+        Array(data["widgets"]).map do |w|
+          {
+            mount: w["mount"] || w["id"],
+            title: w["title"].presence || w["mount"] || w["id"],
+            description: w["description"],
+            state: w["state"],
+          }
+        end
+
+      render json: { widgets: widgets.select { |w| w[:mount].present? } }
+    rescue SocketError, Timeout::Error, Errno::ECONNREFUSED, Errno::EHOSTUNREACH
+      render json: { widgets: [] }
+    end
+
     def show
       base_url = SiteSetting.second_brain_term_llm_url.to_s.sub(%r{/+\z}, "")
       raise Discourse::NotFound if base_url.blank?

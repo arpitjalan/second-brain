@@ -12,6 +12,7 @@ register_asset "stylesheets/common/second-brain.scss"
 
 register_svg_icon "paper-plane"
 register_svg_icon "globe"
+register_svg_icon "puzzle-piece"
 
 # Take over the homepage from the plugin itself — no separate theme needed.
 # HomepageHelper#resolve returns "custom" when this modifier is truthy, routing
@@ -46,6 +47,8 @@ after_initialize do
     post "/second-brain/chats" => "second_brain/chats#create"
     # Turn a private chat into a public topic.
     post "/second-brain/chats/:topic_id/make_public" => "second_brain/chats#make_public"
+    # List the family's term-llm widgets (for the sidebar).
+    get "/second-brain/list-widgets" => "second_brain/widgets#index"
     # Proxy term-llm widget pages/assets (with the Bearer token, server-side).
     get "/second-brain/widgets/*path" => "second_brain/widgets#show", format: false
   end
