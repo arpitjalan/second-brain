@@ -47,6 +47,23 @@ body.user-messages-page {
 }
 
 // =============================================================================
+// Chat view (a PM) — strip forum chrome for a clean conversation.
+// =============================================================================
+body.archetype-private_message {
+  // The topic map (the "1 view / N users" stats + participant box) is noise
+  // for a private family chat.
+  .topic-map {
+    display: none;
+  }
+
+  // The inline reply box replaces the composer, so hide the footer "Reply"
+  // button (other footer actions like Make public / Bookmark stay).
+  .topic-footer-main-buttons .create {
+    display: none;
+  }
+}
+
+// =============================================================================
 // Tool-call summary (and other collapsibles in posts) — a tidy boxed look.
 // =============================================================================
 .cooked details {
@@ -126,7 +143,7 @@ body.user-messages-page {
 
   &:focus-within {
     border-color: var(--tertiary);
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
+    box-shadow: 0 2px 12px rgb(0 0 0 / 7%);
   }
 
   &__input {
@@ -155,4 +172,9 @@ body.user-messages-page {
     font-size: var(--font-down-1);
     color: var(--primary-medium);
   }
+}
+
+// The inline reply box at the bottom of a chat (reuses .sb-starter styling).
+.sb-chat-reply {
+  margin: 16px 0 8px;
 }
