@@ -36,3 +36,47 @@ $sb-max-width: 640px;
     flex-wrap: wrap;
   }
 }
+
+// The frictionless "start a chat" box.
+.sb-starter {
+  text-align: left;
+  border: 1px solid var(--primary-low);
+  border-radius: 14px;
+  background: var(--primary-very-low);
+  padding: 12px 14px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:focus-within {
+    border-color: var(--tertiary);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
+  }
+
+  &__input {
+    width: 100%;
+    border: none;
+    background: transparent;
+    resize: none;
+    padding: 0;
+    font-size: var(--font-up-1);
+    line-height: 1.5;
+
+    &:focus {
+      outline: none;
+      box-shadow: none;
+    }
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 10px;
+  }
+
+  &__link {
+    font-size: var(--font-down-1);
+    color: var(--primary-medium);
+  }
+}

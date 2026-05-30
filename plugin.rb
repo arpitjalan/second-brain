@@ -41,6 +41,8 @@ after_initialize do
   Discourse::Application.routes.append do
     # Legacy one-shot proxy (homepage chat on `main`); harmless here.
     post "/second-brain/ask" => "second_brain/ask#create"
+    # Start a chat from a single message (frictionless homepage box).
+    post "/second-brain/chats" => "second_brain/chats#create"
     # Turn a private chat into a public topic.
     post "/second-brain/chats/:topic_id/make_public" => "second_brain/chats#make_public"
   end

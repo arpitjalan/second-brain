@@ -35,9 +35,40 @@ module ::SecondBrain
       return if answer.blank?
 
       PostCreator.create!(Bot.user, topic_id: @topic.id, raw: answer, skip_validations: true)
+      maybe_title!(messages)
     end
 
     private
+
+    # Auto-name the chat once, from the first user message (a quick, non-agentic
+    # term-llm call). The chat starts with a throwaway title derived from the
+    # message; this replaces it with something concise.
+    def maybe_title!(messages)
+      return if @topic.custom_fields["second_brain_titled"]
+
+      first_user = messages.find { |m| m[:role] == "user" }
+      return if first_user.nil?
+
+      prompt = [
+        {
+          role: "system",
+          content:
+            "Generate a concise chat title of 3-6 words summarizing the user's " \
+              "message. Reply with only the title — no quotes, no trailing punctuation.",
+        },
+        { role: "user", content: first_user[:content].to_s.truncate(500) },
+      ]
+
+      title = TermLlmClient.new.complete(prompt).to_s.strip.delete('"').tr("\n", " ").strip
+      title = title.truncate(80)
+      return if title.length < 2
+
+      @topic.update!(title: title)
+      @topic.custom_fields["second_brain_titled"] = true
+      @topic.save_custom_fields
+    rescue => e
+      Rails.logger.warn("second-brain: title generation failed: #{e.message}")
+    end
 
     # The whole PM transcript, mapped to term-llm chat roles.
     def build_messages
