@@ -13,12 +13,29 @@ module ::SecondBrain
     requires_login
     skip_before_action :check_xhr, only: %i[show], raise: false
 
+    # Widgets are self-contained pages with inline scripts; Discourse's strict
+    # CSP would block them. We set our own (permissive) CSP on the proxied
+    # response — Discourse's CSP middleware skips responses that already carry a
+    # Content-Security-Policy header.
+    WIDGET_CSP = [
+      "default-src 'self' data: blob:",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: https: http:",
+      "font-src 'self' data:",
+      "connect-src 'self'",
+      "frame-ancestors 'self'",
+    ].join("; ").freeze
+
     def show
       base_url = SiteSetting.second_brain_term_llm_url.to_s.sub(%r{/+\z}, "")
       raise Discourse::NotFound if base_url.blank?
 
       path = params[:path].to_s
       raise Discourse::InvalidParameters, :path if path.include?("..")
+
+      # Don't let dev mini-profiler inject its badge/script into the widget HTML.
+      Rack::MiniProfiler.deauthorize_request if defined?(Rack::MiniProfiler)
 
       target = +"#{base_url}/widgets/#{path}"
       target << "?#{request.query_string}" if request.query_string.present?
@@ -27,6 +44,7 @@ module ::SecondBrain
 
       content_type = upstream["content-type"].presence || "application/octet-stream"
       response.headers["Cache-Control"] = "no-store"
+      response.headers["Content-Security-Policy"] = WIDGET_CSP
       render body: upstream.body, status: upstream.code.to_i, content_type: content_type
     rescue SocketError, Timeout::Error, Errno::ECONNREFUSED, Errno::EHOSTUNREACH => e
       render plain: "Could not reach the widget: #{e.message}", status: :bad_gateway
