@@ -23,22 +23,41 @@ module ::SecondBrain
       target = +"#{base_url}/widgets/#{path}"
       target << "?#{request.query_string}" if request.query_string.present?
 
-      uri = URI.parse(target)
-      http = Net::HTTP.new(uri.host, uri.port)
-      http.use_ssl = uri.scheme == "https"
-      http.open_timeout = 10
-      http.read_timeout = 30
-
-      proxied = Net::HTTP::Get.new(uri)
-      key = SiteSetting.second_brain_term_llm_api_key
-      proxied["Authorization"] = "Bearer #{key}" if key.present?
-      upstream = http.request(proxied)
+      upstream = fetch_following_redirects(URI.parse(target))
 
       content_type = upstream["content-type"].presence || "application/octet-stream"
       response.headers["Cache-Control"] = "no-store"
       render body: upstream.body, status: upstream.code.to_i, content_type: content_type
     rescue SocketError, Timeout::Error, Errno::ECONNREFUSED, Errno::EHOSTUNREACH => e
       render plain: "Could not reach the widget: #{e.message}", status: :bad_gateway
+    end
+
+    private
+
+    # Widget routes often 3xx (trailing-slash / index normalization); follow the
+    # redirects server-side, carrying the token on every hop, so the iframe gets
+    # the final 200 — not a "Temporary Redirect" body.
+    def fetch_following_redirects(uri)
+      key = SiteSetting.second_brain_term_llm_api_key
+
+      5.times do
+        http = Net::HTTP.new(uri.host, uri.port)
+        http.use_ssl = uri.scheme == "https"
+        http.open_timeout = 10
+        http.read_timeout = 30
+
+        request = Net::HTTP::Get.new(uri)
+        request["Authorization"] = "Bearer #{key}" if key.present?
+        response = http.request(request)
+
+        unless response.is_a?(Net::HTTPRedirection) && response["location"].present?
+          return response
+        end
+
+        uri = URI.join(uri.to_s, response["location"])
+      end
+
+      raise Discourse::InvalidParameters, :path # too many redirects
     end
   end
 end
