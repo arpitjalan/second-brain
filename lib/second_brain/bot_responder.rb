@@ -95,26 +95,24 @@ module ::SecondBrain
     def render_reply(text, tools)
       parts = []
       parts << tool_summary(tools) if tools.present?
-      body = absolutize_widget_links(text.to_s)
+      body = proxy_widget_links(text.to_s)
       parts << body if body.strip.present?
       parts.join("\n\n")
     end
 
-    # term-llm returns widget links relative to its own server (e.g.
-    # "/chat/widgets/dashboard/"), which Discourse would resolve against its own
-    # origin. Rewrite them to absolute term-llm URLs so they point at the right
-    # host (and so the client can embed them as iframes).
-    def absolutize_widget_links(markdown)
+    # term-llm widget links point at its own server and need its Bearer token.
+    # Rewrite them (relative "/chat/widgets/…" or absolute "<host>/chat/widgets/…")
+    # to our same-origin proxy path "/second-brain/widgets/…", which forwards to
+    # term-llm with the token. The client then embeds that as an iframe.
+    PROXY_WIDGETS = "/second-brain/widgets/"
+
+    def proxy_widget_links(markdown)
       base_url = SiteSetting.second_brain_term_llm_url.to_s.sub(%r{/+\z}, "")
       return markdown if base_url.blank?
 
       path = (URI.parse(base_url).path.presence rescue nil).to_s
-      relative = "#{path}/widgets/"
-      absolute = "#{base_url}/widgets/"
-
-      # Match the relative prefix only at a boundary, so already-absolute URLs
-      # (".../host/chat/widgets/…") are left alone.
-      markdown.gsub(%r{(?<![\w:/])#{Regexp.escape(relative)}}, absolute)
+      result = markdown.gsub("#{base_url}/widgets/", PROXY_WIDGETS)
+      result.gsub(%r{(?<![\w:/])#{Regexp.escape("#{path}/widgets/")}}, PROXY_WIDGETS)
     end
 
     def tool_summary(tools)

@@ -33,6 +33,7 @@ after_initialize do
   require_relative "app/jobs/regular/second_brain_reply"
   require_relative "app/controllers/second_brain/ask_controller"
   require_relative "app/controllers/second_brain/chats_controller"
+  require_relative "app/controllers/second_brain/widgets_controller"
 
   # Chats are PMs with the bot user. When a family member posts in such a PM,
   # the bot replies with term-llm's answer (off-request, in a job).
@@ -45,5 +46,7 @@ after_initialize do
     post "/second-brain/chats" => "second_brain/chats#create"
     # Turn a private chat into a public topic.
     post "/second-brain/chats/:topic_id/make_public" => "second_brain/chats#make_public"
+    # Proxy term-llm widget pages/assets (with the Bearer token, server-side).
+    get "/second-brain/widgets/*path" => "second_brain/widgets#show", format: false
   end
 end

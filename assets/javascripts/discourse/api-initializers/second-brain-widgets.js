@@ -1,25 +1,16 @@
 import { apiInitializer } from "discourse/lib/api";
 
-// Embed term-llm widgets inline. The bot's reply links to an (absolutized)
-// widget URL like https://brain.example.com/chat/widgets/dashboard/ ; we find
-// those links in cooked posts and drop an iframe next to them. Done in the DOM
-// (not the cooked HTML) so Discourse's sanitizer doesn't strip the iframe.
+// Embed term-llm widgets inline. The bot's reply links to our same-origin proxy
+// path (/second-brain/widgets/<name>/), which forwards to term-llm with the
+// Bearer token. We find those links in cooked posts and drop an iframe next to
+// them — in the DOM (not the cooked HTML), so the sanitizer doesn't strip it.
+const PROXY_WIDGETS = "/second-brain/widgets/";
+
 export default apiInitializer((api) => {
-  const siteSettings = api.container.lookup("service:site-settings");
-  const base = (siteSettings.second_brain_term_llm_url || "").replace(
-    /\/+$/,
-    ""
-  );
-  if (!base) {
-    return;
-  }
-
-  const widgetPrefix = `${base}/widgets/`;
-
   api.decorateCookedElement(
     (element) => {
       element
-        .querySelectorAll(`a[href^="${widgetPrefix}"]`)
+        .querySelectorAll(`a[href*="${PROXY_WIDGETS}"]`)
         .forEach((link) => {
           if (link.dataset.sbWidget) {
             return;
