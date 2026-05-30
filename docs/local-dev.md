@@ -252,6 +252,32 @@ The config lives in stan's persistent volume, so it survives restarts/recreates.
 
 ---
 
+## Part D — Add a personal agent (multi-agent)
+
+The plugin supports a shared **family** agent (`stan`, admin) plus opt-in
+**personal** agents — each its own term-llm container + Discourse bot user, a TL4
+(non-admin) user **private to its owner**. See `docs/design-multi-agent.md` for
+the design. Provisioning is one command:
+
+```bash
+# 1. stand up the agent's container (its own host port is auto-assigned)
+term-llm contain new stan-arpit && term-llm contain start stan-arpit
+
+# 2. wire it as a personal agent owned by member "arpit"
+scripts/setup-local-dev.sh stan-arpit --owner arpit
+```
+
+`--owner` makes it a TL4 (non-admin) bot, mints its own user-scoped forum key,
+and writes a row in the `second_brain_agents` registry pointing at that
+container's url/token + owner — **without touching the family settings**. After a
+`bin/dev` restart + refresh, `arpit` sees an agent switcher on the homepage and
+their own widgets in the sidebar; no one else can reach `stan-arpit`.
+
+To remove one: `DELETE FROM second_brain_agents WHERE bot_user_id = <id>` (or via
+the rails console) and stop its container.
+
+---
+
 ## What persists vs. what's per-session
 
 | Persists across restarts | Re-do each dev session |

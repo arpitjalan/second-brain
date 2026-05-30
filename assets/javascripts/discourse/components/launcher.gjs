@@ -61,8 +61,12 @@ export default class Launcher extends Component {
     return this.siteSettings.second_brain_bot_username || "stan";
   }
 
-  // The agent the composer targets — the selected one, else the family bot name.
+  // The agent the composer targets. With no choice (just the family agent), keep
+  // the configured bot name verbatim; otherwise show the selected agent's name.
   get composerBotName() {
+    if (!this.showAgentSwitcher) {
+      return this.botUsername;
+    }
     const a = this.agents.find((x) => x.username === this.selectedAgent);
     return a?.name || this.botUsername;
   }

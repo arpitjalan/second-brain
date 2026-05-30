@@ -118,6 +118,13 @@ module ::SecondBrain
       guardian.ensure_can_see!(post.topic)
       raise Discourse::InvalidAccess unless post.topic&.private_message?
 
+      # A personal agent's run is private to its owner — being a PM participant
+      # (e.g. invited in later) is not enough to drive/answer it.
+      agent = Agent.for_topic(post.topic) || Agent.family
+      if !agent.shared? && agent.owner_user_id != current_user.id
+        raise Discourse::InvalidAccess
+      end
+
       cancelled = ActiveModel::Type::Boolean.new.cast(params[:cancelled])
 
       # Serialize concurrent submits (double-tap / two devices) so a late one can't
@@ -134,7 +141,6 @@ module ::SecondBrain
         answers = cancelled ? nil : build_answers(public_state["questions"] || [], params[:answers])
 
         begin
-          agent = Agent.for_topic(post.topic) || Agent.family
           result =
             agent.client.submit_ask_user(
               session_id: server_state["session_id"],

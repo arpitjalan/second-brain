@@ -36,7 +36,7 @@ describe SecondBrain::Agent do
   end
 
   describe "with a personal agent in the registry" do
-    fab!(:owner) { Fabricate(:user) }
+    fab!(:owner, :user)
     fab!(:bot) { Fabricate(:user, username: "stan_arpit") }
 
     let!(:row) do
@@ -79,7 +79,7 @@ describe SecondBrain::Agent do
   end
 
   describe ".for_topic" do
-    fab!(:human) { Fabricate(:user) }
+    fab!(:human, :user)
 
     it "finds the agent bot participating in a PM" do
       topic = Fabricate(:private_message_topic, user: human, recipient: family_bot)

@@ -7,5 +7,12 @@ module ::SecondBrain
   # never serialized to the client.
   class AgentRecord < ::ActiveRecord::Base
     self.table_name = "second_brain_agents"
+
+    validates :bot_user_id, presence: true, uniqueness: true
+    validates :forum_role, inclusion: { in: %w[admin tl4 none] }
+
+    # forum_role is advisory metadata for this phase — a personal agent's actual
+    # privilege (TL4, non-admin) is set on its bot User at provisioning time, not
+    # enforced from this column.
   end
 end

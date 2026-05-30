@@ -9,8 +9,8 @@ describe SecondBrain::ChatsController do
     SiteSetting.second_brain_term_llm_api_key = "fam-token"
   end
 
-  fab!(:owner) { Fabricate(:user) }
-  fab!(:other) { Fabricate(:user) }
+  fab!(:owner, :user)
+  fab!(:other, :user)
   fab!(:personal_bot) { Fabricate(:user, username: "stan_arpit") }
 
   let!(:personal_agent) do
@@ -68,6 +68,24 @@ describe SecondBrain::ChatsController do
       sign_in(owner)
       post "/second-brain/chats.json", params: { message: "hello", agent: "nope" }
       expect(response.status).to eq(400)
+    end
+  end
+
+  describe "POST /second-brain/answer (personal-agent privacy)" do
+    fab!(:topic) { Fabricate(:private_message_topic, user: owner, recipient: personal_bot) }
+    fab!(:bot_post) { Fabricate(:post, topic: topic, user: personal_bot) }
+
+    it "forbids a non-owner participant from driving a personal agent's run" do
+      Fabricate(:topic_allowed_user, topic: topic, user: other) # invited in later
+      sign_in(other)
+      post "/second-brain/answer.json", params: { post_id: bot_post.id, call_id: "x" }
+      expect(response.status).to eq(403)
+    end
+
+    it "lets the owner past the access guard (404 with no pending prompt)" do
+      sign_in(owner)
+      post "/second-brain/answer.json", params: { post_id: bot_post.id, call_id: "x" }
+      expect(response.status).to eq(404) # past the guard; no pending ask_user state
     end
   end
 end

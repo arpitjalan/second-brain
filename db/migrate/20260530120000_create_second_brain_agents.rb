@@ -8,8 +8,8 @@ class CreateSecondBrainAgents < ActiveRecord::Migration[7.2]
   def change
     create_table :second_brain_agents do |t|
       t.integer :bot_user_id, null: false
-      t.string :term_llm_url, null: false, default: ""
-      t.string :term_llm_token, null: false, default: "" # server-side secret
+      t.text :term_llm_url, null: false, default: ""
+      t.text :term_llm_token, null: false, default: "" # server-side secret (text: no truncation)
       t.string :agent_name
       t.string :model
       t.integer :owner_user_id # null = shared/family; set = personal

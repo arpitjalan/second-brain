@@ -1,7 +1,12 @@
 # Design: family agent + per-user agents
 
-Status: **agreed plan, not yet built.** This is the firm design we lock before
-writing code. Companion to `docs/architecture.md`.
+Status: **built on branches, not yet merged.** Phase 1 (behaviour-neutral Agent
+abstraction) is on `multi-agent-phase1`; Phase 2 (registry, per-user agents,
+routing, access control, launcher switcher, agent-aware widgets, provisioning) is
+on `multi-agent-phase2`, stacked on Phase 1. Verified by RSpec
+(`spec/lib/second_brain/agent_spec.rb`, `spec/requests/second_brain/chats_controller_spec.rb`).
+To actually run a personal agent, provision one (see `docs/local-dev.md` →
+"Add a personal agent"). Companion to `docs/architecture.md`.
 
 ## Goal
 

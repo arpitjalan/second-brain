@@ -87,7 +87,16 @@ module ::SecondBrain
       base_url = agent.url.to_s.sub(%r{/+\z}, "")
       return [] if base_url.blank?
 
-      upstream = fetch_following_redirects(URI.parse("#{base_url}/admin/widgets/status"), agent)
+      # Short timeouts: the status JSON is quick, and #index fans out across every
+      # accessible agent on the request thread — one slow/down agent mustn't stall
+      # the whole sidebar.
+      upstream =
+        fetch_following_redirects(
+          URI.parse("#{base_url}/admin/widgets/status"),
+          agent,
+          open_timeout: 4,
+          read_timeout: 6,
+        )
       data = JSON.parse(upstream.body) rescue {}
       prefix = widget_proxy_prefix(agent)
       Array(data["widgets"]).filter_map do |w|
@@ -113,7 +122,7 @@ module ::SecondBrain
     # exact term-llm origin (an SSRF guard) — pin scheme+host+port, not just host,
     # so a redirect can't downgrade to http or hop to another port on the same host
     # and leak the Bearer token there.
-    def fetch_following_redirects(uri, agent)
+    def fetch_following_redirects(uri, agent, open_timeout: 10, read_timeout: 30)
       key = agent.token
       allowed_origin = [uri.scheme, uri.host, uri.port]
 
@@ -122,8 +131,8 @@ module ::SecondBrain
 
         http = Net::HTTP.new(uri.host, uri.port)
         http.use_ssl = uri.scheme == "https"
-        http.open_timeout = 10
-        http.read_timeout = 30
+        http.open_timeout = open_timeout
+        http.read_timeout = read_timeout
 
         request = Net::HTTP::Get.new(uri)
         request["Authorization"] = "Bearer #{key}" if key.present?

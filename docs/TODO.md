@@ -130,6 +130,18 @@ owner; the launcher defaults to your agent with a switcher. **Firm plan + change
 surface + phased rollout in `docs/design-multi-agent.md`.** Safe first step is the
 behaviour-neutral agent-registry refactor (one agent == today's behaviour).
 
+**Known limitation (personal widgets):** a personal agent's widget is proxied at
+`/second-brain/agent-widgets/<agent>/<mount>/`, so the widget's *relative*
+subresource fetches inherit the agent — but *absolute* ones (`/widgets/…` or
+`/second-brain/widgets/…`, which term-llm widgets sometimes emit) fall back to the
+family proxy. Not a cross-user leak (it routes to the user's own family agent, no
+token exposure), but a personal widget that uses absolute paths would load the
+wrong data. Family widgets are unaffected. Fix when personal widgets are actually
+used: either rewrite absolute `/widgets/` refs in the proxied body to the
+agent-scoped prefix, or bind the agent to the iframe via a signed cookie/session
+scope (the cleaner, JS-URL-proof option). Verified by the review; deferred since
+no personal agent is provisioned yet.
+
 ---
 
 ## Other confirmed-but-deferred items (from the code-review sweep)
