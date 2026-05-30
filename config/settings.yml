@@ -23,3 +23,7 @@ plugins:
     default: ""
     type: category
     client: true
+  # Tell the bot it can act on this forum (needs the term-llm `discourse` skill
+  # deployed + credentials configured on the term-llm server). Off until ready.
+  second_brain_forum_actions_enabled:
+    default: false

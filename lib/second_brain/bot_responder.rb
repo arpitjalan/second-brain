@@ -244,17 +244,36 @@ module ::SecondBrain
     # The whole PM transcript, mapped to term-llm chat roles.
     def build_messages
       bot_id = Bot.user.id
-      @topic
-        .posts
-        .where(post_type: Post.types[:regular])
-        .order(:post_number)
-        .pluck(:user_id, :raw)
-        .filter_map do |user_id, raw|
-          content = raw.to_s.strip
-          next if content.blank?
 
-          { role: user_id == bot_id ? "assistant" : "user", content: content }
-        end
+      transcript =
+        @topic
+          .posts
+          .where(post_type: Post.types[:regular])
+          .order(:post_number)
+          .pluck(:user_id, :raw)
+          .filter_map do |user_id, raw|
+            content = raw.to_s.strip
+            next if content.blank?
+
+            { role: user_id == bot_id ? "assistant" : "user", content: content }
+          end
+
+      forum_context.concat(transcript)
+    end
+
+    # Tell the bot it's in a forum chat and who it's talking to, so it can act on
+    # the forum via its `discourse` skill. Off until the skill is deployed.
+    def forum_context
+      return [] unless SiteSetting.second_brain_forum_actions_enabled
+
+      member = @topic.user&.username || "a family member"
+      content = <<~MSG.strip
+        You are an AI assistant inside a private Discourse forum that a family uses as a shared knowledge base and AI workspace. You are currently in a private chat with the forum member "#{member}".
+
+        You can take actions on the forum — create topics, reply, search, send messages — using your "discourse" skill (it has the forum's API access configured). You always act as yourself (your own bot account); never impersonate members. Whenever you create or reference forum content, include the link.
+      MSG
+
+      [{ role: "system", content: content }]
     end
   end
 end

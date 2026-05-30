@@ -5,6 +5,7 @@ en:
     second_brain_term_llm_url: "Base URL of your term-llm server, including its base path (e.g. https://brain.example.com/ui). The plugin calls its OpenAI-compatible API server-side."
     second_brain_term_llm_api_key: "Bearer token for the term-llm server (sent server-side only; never exposed to the browser)."
     second_brain_term_llm_model: "Model to request from term-llm. Leave blank to use term-llm's default."
+    second_brain_forum_actions_enabled: "Tell the bot it can act on this forum (create topics, reply, search). Requires the term-llm `discourse` skill + credentials configured on the term-llm server."
   second_brain:
     thinking: "_Thinking…_"
     empty_reply: "_(no reply)_"
