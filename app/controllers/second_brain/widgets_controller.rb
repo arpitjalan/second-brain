@@ -2,6 +2,7 @@
 
 require "net/http"
 require "uri"
+require "cgi"
 
 module ::SecondBrain
   # Reverse-proxies term-llm widget pages (and their assets/JSON) through
@@ -52,20 +53,18 @@ module ::SecondBrain
 
       upstream, final_uri = fetch_following_redirects(URI.parse(target), agent)
 
-      # term-llm normalizes a widget directory to a trailing slash (`/widgets/jobs`
-      # -> `/widgets/jobs/`). A widget's data calls are RELATIVE (`fetch('api/jobs')`),
-      # so they only resolve when the page URL ends in "/". If term-llm landed on a
-      # directory but the browser asked without the slash, bounce it to the slash
-      # form — so a widget URL works with OR without a trailing slash.
-      if final_uri.path.end_with?("/") && !request.path.end_with?("/")
-        dest = +"#{request.path}/"
-        dest << "?#{request.query_string}" if request.query_string.present?
-        return redirect_to(dest)
-      end
-
       content_type = upstream["content-type"].presence || "application/octet-stream"
       body = upstream.body.to_s
-      body = rewrite_widget_base(body, agent) if content_type.include?("html")
+      if content_type.include?("html")
+        body = rewrite_widget_base(body, agent)
+        # A widget's data calls are RELATIVE (`fetch('api/jobs')`), which only
+        # resolve right when the page's base ends in "/". Rather than redirect to a
+        # trailing slash (impossible to do safely — a glob route hides the slash from
+        # request.path, so the redirect loops), inject a <base href> pointing at the
+        # widget's own directory. Relative refs then resolve correctly with OR without
+        # a trailing slash on the URL, and no redirect happens.
+        body = inject_base_href(body, widget_base_href(agent, final_uri))
+      end
       response.headers["Cache-Control"] = "no-store"
       response.headers["Content-Security-Policy"] = WIDGET_CSP
       render body: body, status: upstream.code.to_i, content_type: content_type
@@ -92,6 +91,23 @@ module ::SecondBrain
     # widget's own relative fetches inherit the agent.
     def widget_proxy_prefix(agent)
       agent.shared? ? "/second-brain/widgets/" : "/second-brain/agent-widgets/#{agent.user.username}/"
+    end
+
+    # The same-origin URL the widget's relative refs should resolve against: the
+    # proxy equivalent of the directory term-llm actually served (final_uri after
+    # following its trailing-slash redirect). Preserves that trailing slash so
+    # `fetch('api/x')` resolves into the widget.
+    def widget_base_href(agent, final_uri)
+      after = final_uri.path.to_s.split("/widgets/", 2)[1].to_s
+      "#{widget_proxy_prefix(agent)}#{after}"
+    end
+
+    # Inject `<base href>` right after <head> so relative URLs resolve against the
+    # widget's directory regardless of the page URL's trailing slash. Only when the
+    # doc has a <head> and no <base> of its own (term-llm widgets don't set one).
+    def inject_base_href(body, href)
+      return body if href.blank? || body.match?(/<base\b/i) || !body.match?(/<head[^>]*>/i)
+      body.sub(/<head[^>]*>/i) { |head| %(#{head}<base href="#{CGI.escapeHTML(href)}">) }
     end
 
     # Keep a widget page talking to ITS agent. term-llm widgets use relative paths
