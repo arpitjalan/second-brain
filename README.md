@@ -78,7 +78,11 @@ The agent name is an argument (defaults to `stan`) and drives both the container
 talks to and the Discourse bot username, so nothing is pinned to one name.
 This discovers the agent's container + docker network, points the plugin at local stan,
 makes the bot an admin with a Discourse API key, installs the `discourse` skill +
-credentials into stan, wires the container→host path, and verifies the round-trip.
+credentials into stan, seeds the calm forum layout (`rake second_brain:setup`), wires
+the container→host path, and verifies the round-trip.
+(Installing the plugin by hand instead? Run the calm-layout seeding once yourself:
+`cd ~/discourse && bin/rake second_brain:setup` — it's idempotent and only touches
+settings still at their factory default.)
 The script is **OS-aware**: on Linux it starts the host forwarder and **prints one
 `sudo ufw` line** it can't run itself (run that, then re-run the script); on macOS it
 uses `host.docker.internal` and skips both. See [docs/local-dev.md](docs/local-dev.md)

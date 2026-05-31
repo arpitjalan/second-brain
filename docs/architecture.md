@@ -135,7 +135,8 @@ environment, never in the skill file or the conversation.
 | `assets/javascripts/.../connectors/topic-area-bottom/second-brain-chat-reply.gjs` | Inline chat reply box |
 | `assets/stylesheets/common/second-brain.scss` | Chat/homepage styling, forum-chrome trimming |
 | `config/settings.yml` | Site settings (term-llm URL/token/model, bot username, categories, feature flags) |
-| `db/migrate/*` | Install-time calm defaults via `INSERT … ON CONFLICT DO NOTHING` |
+| `lib/tasks/second_brain.rake` | `rake second_brain:setup` — one-shot calm-layout seeding (`INSERT … ON CONFLICT DO NOTHING`) |
+| `db/migrate/*` | Real schema only (the `second_brain_agents` registry table) |
 | `term-llm/skills/discourse/SKILL.md` | The bot-side skill for forum actions |
 
 ## External interfaces
@@ -161,5 +162,10 @@ environment, never in the skill file or the conversation.
   swallows errors so a failure never causes a retry storm or breaks the forum.
 - **Custom homepage** via the core `:custom_homepage_enabled` modifier rendering the
   `custom-homepage` plugin outlet (not a theme, not the Blocks API).
-- **Calm defaults, never clobbered.** Setting migrations seed defaults only if unset
-  (`ON CONFLICT DO NOTHING`), so they never override an admin's later choices.
+- **Calm defaults, never clobbered.** `rake second_brain:setup` seeds the calm
+  layout (welcome banner off, top menu collapsed, chat off, reactions on) only if a
+  setting is still at its factory default (`ON CONFLICT DO NOTHING`), so it never
+  overrides an admin's later choices. It's a rake task, not a migration — seeding
+  *settings* isn't a schema change and shouldn't ride `db:migrate`. `db/migrate/`
+  is reserved for real schema (the `second_brain_agents` registry table).
+  `scripts/setup-local-dev.sh` runs the task for you in local dev.

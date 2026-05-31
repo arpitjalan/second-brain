@@ -40,7 +40,9 @@ troubleshooting: `docs/local-dev.md`.
   inline reply box, widget proxy + sidebar, streaming).
 - `term-llm/` — the **bot side**: the `discourse` skill the bot uses to act on the
   forum, plus its own README (remote/droplet deploy).
-- `config/`, `db/` — settings and install-time setting migrations.
+- `config/`, `db/`, `lib/tasks/` — settings; the `second_brain_agents` schema
+  migration; and `rake second_brain:setup` (idempotent calm-layout seeding —
+  settings, not schema, so a rake task rather than a migration).
 
 ## Conventions
 
