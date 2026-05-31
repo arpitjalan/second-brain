@@ -348,8 +348,8 @@ Cloudflare tunnel: `cloudflared tunnel --url http://127.0.0.1:3000`) and set
 pkill -f dev-discourse-forwarder.py
 # (optional) remove the ufw rule:
 sudo ufw delete allow from <SUBNET> to any port 3000 proto tcp
-# point the plugin back at droplet stan:
+# point the plugin back at your remote/droplet stan:
 cd ~/discourse && bin/rails runner '
-SiteSetting.second_brain_term_llm_url = "http://techapj.demo-by-discourse.com:8081/chat/"
+SiteSetting.second_brain_term_llm_url = "https://your-stan-host.example.com/chat/"
 SiteSetting.second_brain_term_llm_api_key = "<droplet WEB_TOKEN>"'
 ```
