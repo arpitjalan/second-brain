@@ -152,37 +152,36 @@ rake tasks instead — they're location-agnostic about term-llm (they just store
 URL + token) and run wherever Discourse runs. Secrets go via **env vars** so an odd
 character in a token won't break shell splitting.
 
-**Family agent** — point it at any term-llm endpoint (one command vs editing settings):
+> **Invocation:** a dev checkout uses `bin/rake …`; **inside a production Discourse
+> Docker container** (`cd /var/discourse && ./launcher enter app`, then
+> `cd /var/www/discourse`) use plain **`rake …`** — `bin/rake` fails there. The
+> examples below use `rake`.
+
+**Family agent** — endpoint **+ the bot's forum-action key** (one command vs editing settings):
 ```bash
-cd ~/discourse
 SB_URL=https://stan.example.com/chat SB_TOKEN=<web-token> \
-  bin/rake second_brain:set_family_agent       # optional: SB_MODEL=gpt-5.5
+  rake second_brain:set_family_agent       # optional: SB_MODEL=gpt-5.5  SB_NEW_KEY=1
 ```
 
 **Personal agents** — register/list/remove (admin-run; idempotent):
 ```bash
 SB_BOT=jarvis SB_OWNER=arpit SB_URL=https://jarvis.example.com/chat SB_TOKEN=<web-token> \
-  bin/rake second_brain:add_agent              # optional: SB_MODEL=gpt-5.5  SB_NEW_KEY=1
-bin/rake second_brain:list_agents              # all agents (tokens masked)
-SB_BOT=jarvis SB_DEACTIVATE=1 bin/rake second_brain:remove_agent
+  rake second_brain:add_agent              # optional: SB_MODEL=gpt-5.5  SB_NEW_KEY=1
+rake second_brain:list_agents              # all agents (tokens masked)
+SB_BOT=jarvis SB_DEACTIVATE=1 rake second_brain:remove_agent
 ```
 
-`add_agent` creates the bot user (TL4, non-admin), mints + **prints once** a
-Discourse API key, and writes the registry row. The two secrets flow opposite ways:
-the agent's term-llm token goes **into** the registry (so Discourse can chat it); the
-printed `DISCOURSE_API_KEY` goes **onto the term-llm host** (so the agent can post to
-the forum). Live immediately — no restart. Multiple agents per owner are supported.
+Both `set_family_agent` and `add_agent` set up **both directions** and print exactly
+what to do next:
+- **Chat** (Discourse → term-llm): the `SB_URL` + `SB_TOKEN` you pass.
+- **Forum actions** (term-llm → Discourse): they ensure the bot user (family = admin,
+  personal = TL4), mint + **print once** a Discourse API key, and print the
+  `DISCOURSE_URL` / `DISCOURSE_BOT_USERNAME` / `DISCOURSE_API_KEY` to set on the bot's
+  term-llm host — **plus a pointer to [term-llm/README.md](term-llm/README.md)** for
+  installing the `discourse` skill there. Live immediately — no restart.
 
-> **On a production Discourse** (the standard Docker install), run the same tasks
-> *inside the app container* — the term-llm endpoint is just `SB_URL`:
-> ```bash
-> cd /var/discourse && ./launcher enter app
-> cd /var/www/discourse
-> SB_BOT=jarvis SB_OWNER=arpit SB_URL=https://jarvis.example.com/chat SB_TOKEN=<token> \
->   rake second_brain:add_agent
-> ```
 > When **both** Discourse and term-llm are public, forum actions need **no tunnel** —
-> set the remote term-llm's `DISCOURSE_URL` to your site URL + the printed key. (The
+> set the term-llm host's `DISCOURSE_URL` to your site URL + the printed key. (The
 > `cloudflared` tunnel is only for exposing a *local* Discourse; see
 > [docs/local-dev.md](docs/local-dev.md) "Remote variant".)
 

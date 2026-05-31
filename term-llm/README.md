@@ -26,6 +26,13 @@ REST API (create topics, reply, search, send PMs). The bot always acts as
 
 ## On the Discourse side
 
+> **Tip:** the plugin's rake tasks automate this side and **print the exact
+> `DISCOURSE_URL` / `DISCOURSE_BOT_USERNAME` / `DISCOURSE_API_KEY`** to paste above —
+> `rake second_brain:set_family_agent` (family) or `rake second_brain:add_agent`
+> (personal) ensure the bot account, mint + print its API key, and enable forum
+> actions. See the plugin README, "Agents on a live server". The manual steps below
+> are the equivalent if you'd rather do it by hand.
+
 1. **Make the bot account an admin** and **create a global API key** for it
    (Admin → API Keys → New → User = the bot, Scope = Global). Put that key in
    `DISCOURSE_API_KEY` above. (The bot username is the plugin's

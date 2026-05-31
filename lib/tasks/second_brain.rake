@@ -2,19 +2,26 @@
 
 # Plugin rake tasks (Discourse auto-loads this via Rake.add_rakelib):
 #
-#   Forum setup (site settings):
-#     bin/rake second_brain:setup      # seed the calm "second brain" forum layout
-#     bin/rake second_brain:lockdown   # make the forum private (before real family use)
+# Invocation: a dev checkout uses `bin/rake …`; INSIDE a standard Discourse Docker
+# container (./launcher enter app, cd /var/www/discourse) use plain `rake …` —
+# `bin/rake` fails there. Examples below use `rake`.
 #
-#   Family agent (point it at a term-llm endpoint — writes the global settings):
-#     SB_URL=https://host/chat SB_TOKEN=… [SB_MODEL=gpt-5.5] bin/rake second_brain:set_family_agent
+#   Forum setup (site settings):
+#     rake second_brain:setup      # seed the calm "second brain" forum layout
+#     rake second_brain:lockdown   # make the forum private (before real family use)
+#
+#   Family agent — endpoint + the bot's forum-action key (writes global settings):
+#     SB_URL=https://host/chat SB_TOKEN=… [SB_MODEL=gpt-5.5] [SB_NEW_KEY=1] rake second_brain:set_family_agent
 #
 #   Per-user (personal) agents — the PROD provisioning path (local dev uses
 #   scripts/setup-local-dev.sh --owner, which also spins up the docker container):
 #     SB_BOT=jarvis SB_OWNER=arpit SB_URL=https://host/chat SB_TOKEN=… \
-#       [SB_MODEL=gpt-5.5] [SB_NEW_KEY=1] bin/rake second_brain:add_agent
-#     bin/rake second_brain:list_agents
-#     SB_BOT=jarvis [SB_DEACTIVATE=1] bin/rake second_brain:remove_agent
+#       [SB_MODEL=gpt-5.5] [SB_NEW_KEY=1] rake second_brain:add_agent
+#     rake second_brain:list_agents
+#     SB_BOT=jarvis [SB_DEACTIVATE=1] rake second_brain:remove_agent
+#
+# Both add_agent and set_family_agent print the term-llm-host env (DISCOURSE_URL /
+# BOT_USERNAME / API_KEY) and point at term-llm/README.md for the bot-side setup.
 #
 # The setup/lockdown tasks write *core / other-plugin* site settings (not our own
 # plugin settings, which default via config/settings.yml), so they can't be a
@@ -39,6 +46,31 @@ end
 def sb_mask(secret)
   s = secret.to_s
   s.empty? ? "(none)" : "#{s[0, 6]}…(len #{s.length})"
+end
+
+# Print the forum-action creds (term-llm -> Discourse) + where to put them. The
+# bot's Discourse API key + bot username + the site URL go on the bot's term-llm
+# host, alongside the `discourse` skill — full steps in term-llm/README.md.
+def sb_print_termllm_host(bot, fresh_key)
+  puts
+  puts "  Forum actions (term-llm → Discourse): set these on #{bot.username}'s term-llm"
+  puts "  host and install the `discourse` skill there. Full steps: term-llm/README.md"
+  puts "    DISCOURSE_URL=#{Discourse.base_url}"
+  puts "    DISCOURSE_BOT_USERNAME=#{bot.username}"
+  if fresh_key
+    puts "    DISCOURSE_API_KEY=#{fresh_key}"
+    puts "  ↑ shown ONCE — copy it now (Discourse can't re-display it)."
+  else
+    puts "    DISCOURSE_API_KEY=<kept existing key; pass SB_NEW_KEY=1 to rotate>"
+  end
+end
+
+# Mint a fresh Discourse API key for a bot when it has none (or SB_NEW_KEY is set);
+# else nil (Discourse can't re-display an existing key's secret).
+def sb_ensure_api_key(bot, label)
+  has_key = ApiKey.where(user_id: bot.id, revoked_at: nil).exists?
+  return nil if has_key && ENV["SB_NEW_KEY"].blank?
+  ApiKey.create!(description: "second-brain #{label} #{bot.username}", created_by: Discourse.system_user, user: bot).key
 end
 
 namespace :second_brain do
@@ -92,7 +124,7 @@ namespace :second_brain do
     puts "second_brain:lockdown — forum is now private (login required, invite-only, noindex)."
   end
 
-  desc "Point the family agent at a term-llm endpoint (ENV: SB_URL SB_TOKEN; optional SB_MODEL)"
+  desc "Provision the family agent: term-llm endpoint + the bot's forum-action key (ENV: SB_URL SB_TOKEN; optional SB_MODEL SB_NEW_KEY)"
   task set_family_agent: :environment do
     url = ENV["SB_URL"].to_s.strip
     token = ENV["SB_TOKEN"].to_s.strip
@@ -100,10 +132,11 @@ namespace :second_brain do
     missing = { "SB_URL" => url, "SB_TOKEN" => token }.select { |_, v| v.empty? }.keys
     if missing.any?
       abort "Missing #{missing.join(", ")}.\n" \
-              "Usage: SB_URL=https://host/chat SB_TOKEN=… [SB_MODEL=gpt-5.5] " \
-              "bin/rake second_brain:set_family_agent"
+              "Usage: SB_URL=https://host/chat SB_TOKEN=… [SB_MODEL=gpt-5.5] [SB_NEW_KEY=1] " \
+              "rake second_brain:set_family_agent"
     end
 
+    # 1. Chat direction (Discourse → term-llm): the global settings.
     changes = {
       "second_brain_term_llm_url" => url,
       "second_brain_term_llm_api_key" => token,
@@ -118,8 +151,17 @@ namespace :second_brain do
       SiteSetting.set(name, value)
       puts "  #{name}: #{secret ? sb_mask(was) : was.presence || "(unset)"} -> #{secret ? sb_mask(value) : value.presence || "(default)"}"
     end
-    puts "second_brain:set_family_agent — family agent now points at #{url}."
-    puts "  (Chat works now. Forum actions still need the bot's Discourse API key on the term-llm host.)"
+
+    # 2. Forum-action direction (term-llm → Discourse): the family bot is an admin
+    #    with its own Discourse API key, and forum actions are enabled.
+    bot = SecondBrain::Bot.user # find/create the bot named second_brain_bot_username
+    bot.update!(admin: true) unless bot.admin?
+    SiteSetting.second_brain_forum_actions_enabled = true
+    fresh_key = sb_ensure_api_key(bot, "family agent")
+
+    puts
+    puts "✓ Family agent '#{bot.username}' → #{url} (admin; forum actions on)."
+    sb_print_termllm_host(bot, fresh_key)
   end
 
   desc "Register/update a personal agent (ENV: SB_BOT SB_OWNER SB_URL SB_TOKEN; optional SB_MODEL SB_NEW_KEY)"
@@ -137,7 +179,7 @@ namespace :second_brain do
     if missing.any?
       abort "Missing #{missing.join(", ")}.\n" \
               "Usage: SB_BOT=jarvis SB_OWNER=arpit SB_URL=https://host/chat SB_TOKEN=… " \
-              "[SB_MODEL=gpt-5.5] [SB_NEW_KEY=1] bin/rake second_brain:add_agent"
+              "[SB_MODEL=gpt-5.5] [SB_NEW_KEY=1] rake second_brain:add_agent"
     end
 
     owner = sb_user(owner_name)
@@ -167,17 +209,8 @@ namespace :second_brain do
     end
     bot.update!(admin: false, trust_level: TrustLevel[4], manual_locked_trust_level: TrustLevel[4])
 
-    # API key for forum actions (term-llm -> Discourse). Only minted when missing
-    # (or SB_NEW_KEY): Discourse can't re-display an existing key's secret.
-    has_key = ApiKey.where(user_id: bot.id, revoked_at: nil).exists?
-    fresh_key =
-      if !has_key || ENV["SB_NEW_KEY"].present?
-        ApiKey.create!(
-          description: "second-brain agent #{bot.username}",
-          created_by: Discourse.system_user,
-          user: bot,
-        ).key
-      end
+    # API key for forum actions (term-llm -> Discourse).
+    fresh_key = sb_ensure_api_key(bot, "agent")
 
     # The registry row (Discourse -> term-llm).
     row = SecondBrain::AgentRecord.find_or_initialize_by(bot_user_id: bot.id)
@@ -196,17 +229,8 @@ namespace :second_brain do
     SiteSetting.second_brain_forum_actions_enabled = true
 
     puts "✓ Personal agent '#{bot.username}' #{created ? "registered" : "updated"} — owner #{owner.username}, TL4."
-    puts "  Discourse → term-llm:  #{url}#{model.present? ? "   model=#{model}" : ""}"
-    puts
-    puts "  term-llm → Discourse — set these on #{bot.username}'s term-llm host so it can post:"
-    puts "    DISCOURSE_URL=#{Discourse.base_url}"
-    puts "    DISCOURSE_BOT_USERNAME=#{bot.username}"
-    if fresh_key
-      puts "    DISCOURSE_API_KEY=#{fresh_key}"
-      puts "  ↑ shown ONCE — copy it now (Discourse can't re-display it)."
-    else
-      puts "    DISCOURSE_API_KEY=<kept existing key; pass SB_NEW_KEY=1 to rotate>"
-    end
+    puts "  Chat (Discourse → term-llm):  #{url}#{model.present? ? "   model=#{model}" : ""}"
+    sb_print_termllm_host(bot, fresh_key)
     puts
     puts "  Live immediately — #{owner.username} sees it in the launcher switcher (no restart needed)."
   end
@@ -242,7 +266,7 @@ namespace :second_brain do
   task remove_agent: :environment do
     sb_require_registry!
     bot_name = ENV["SB_BOT"].to_s.strip
-    abort "Missing SB_BOT.\nUsage: SB_BOT=jarvis [SB_DEACTIVATE=1] bin/rake second_brain:remove_agent" if bot_name.empty?
+    abort "Missing SB_BOT.\nUsage: SB_BOT=jarvis [SB_DEACTIVATE=1] rake second_brain:remove_agent" if bot_name.empty?
 
     bot = User.find_by(username_lower: bot_name.downcase)
     abort "No Discourse user '#{bot_name}'." if bot.nil?
