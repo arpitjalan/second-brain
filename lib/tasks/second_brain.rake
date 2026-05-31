@@ -1,8 +1,9 @@
 # frozen_string_literal: true
 
-# Initial plugin setup: seed the calm "second brain" forum layout.
+# Plugin rake tasks:
 #
-#     bin/rake second_brain:setup
+#     bin/rake second_brain:setup      # seed the calm "second brain" forum layout
+#     bin/rake second_brain:lockdown   # make the forum private (before real family use)
 #
 # These are *core / other-plugin* site settings (not our own plugin settings,
 # which default via config/settings.yml) — so they can't be set with a
@@ -48,5 +49,23 @@ namespace :second_brain do
     else
       puts "second_brain:setup — nothing to do (all already set)"
     end
+  end
+
+  # Unlike :setup (which only seeds factory-default settings), this deliberately
+  # ASSERTS a private posture — that's the whole point — so run it knowingly,
+  # before inviting real family members. Idempotent + reversible (it prints the
+  # before -> after for each so you can flip any back).
+  desc "Make the forum private for family use: login required, invite-only, no search indexing"
+  task lockdown: :environment do
+    {
+      "login_required" => true,             # must sign in to see anything
+      "invite_only" => true,                # new accounts only via an invite
+      "allow_index_in_robots_txt" => false, # ask search engines not to index us
+    }.each do |name, value|
+      was = SiteSetting.get(name)
+      SiteSetting.set(name, value)
+      puts "  #{name}: #{was} -> #{value}"
+    end
+    puts "second_brain:lockdown — forum is now private (login required, invite-only, noindex)."
   end
 end

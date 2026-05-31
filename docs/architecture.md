@@ -135,7 +135,7 @@ environment, never in the skill file or the conversation.
 | `assets/javascripts/.../connectors/topic-area-bottom/second-brain-chat-reply.gjs` | Inline chat reply box |
 | `assets/stylesheets/common/second-brain.scss` | Chat/homepage styling, forum-chrome trimming |
 | `config/settings.yml` | Site settings (term-llm URL/token/model, bot username, categories, feature flags) |
-| `lib/tasks/second_brain.rake` | `rake second_brain:setup` — one-shot calm-layout seeding (`INSERT … ON CONFLICT DO NOTHING`) |
+| `lib/tasks/second_brain.rake` | `rake second_brain:setup` (calm-layout seeding) + `:lockdown` (login_required/invite_only/noindex) |
 | `db/migrate/*` | Real schema only (the `second_brain_agents` registry table) |
 | `term-llm/skills/discourse/SKILL.md` | The bot-side skill for forum actions |
 

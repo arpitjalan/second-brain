@@ -123,6 +123,20 @@ prompt to see the interactive question form.
 
 `scripts/setup-local-dev.sh` sets the first two and the forum-actions flag for you.
 
+### Going private (before inviting real family)
+
+Two one-shot rake tasks (auto-loaded by Discourse):
+
+```bash
+cd ~/discourse
+bin/rake second_brain:setup      # calm layout — idempotent, only touches factory-default settings
+bin/rake second_brain:lockdown   # login_required + invite_only + no search indexing
+```
+
+`setup` runs automatically via `setup-local-dev.sh`; `lockdown` is deliberate
+(run it knowingly) — it prints the before → after for each setting and is easy to
+revert. Without it the forum is publicly reachable and search-indexed.
+
 ## Documentation
 
 | Doc | What |
