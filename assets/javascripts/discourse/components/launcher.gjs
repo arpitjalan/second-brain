@@ -191,11 +191,23 @@ export default class Launcher extends Component {
   @action
   registerInput(el) {
     this.inputEl = el;
+    this.autoGrow(el);
   }
 
   @action
   updateMessage(event) {
     this.message = event.target.value;
+    this.autoGrow(event.target);
+  }
+
+  // Grow the textarea to fit its content; CSS min/max-height set the floor + cap.
+  @action
+  autoGrow(el) {
+    if (!el) {
+      return;
+    }
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
   }
 
   @action
@@ -207,6 +219,7 @@ export default class Launcher extends Component {
       if (el) {
         el.focus();
         el.selectionStart = el.selectionEnd = el.value.length;
+        this.autoGrow(el);
       }
     });
   }

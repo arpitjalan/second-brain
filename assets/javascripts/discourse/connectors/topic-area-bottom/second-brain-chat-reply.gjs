@@ -3,6 +3,8 @@ import { tracked } from "@glimmer/tracking";
 import { fn } from "@ember/helper";
 import { on } from "@ember/modifier";
 import { action } from "@ember/object";
+import didInsert from "@ember/render-modifiers/modifiers/did-insert";
+import { next } from "@ember/runloop";
 import { service } from "@ember/service";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
@@ -19,6 +21,7 @@ export default class SecondBrainChatReply extends Component {
   @tracked value = "";
   @tracked submitting = false;
   @tracked attachments = [];
+  inputEl = null;
 
   get topic() {
     return this.args.outletArgs.model;
@@ -34,8 +37,25 @@ export default class SecondBrainChatReply extends Component {
   }
 
   @action
+  registerInput(el) {
+    this.inputEl = el;
+    this.autoGrow(el);
+  }
+
+  // Grow the textarea to fit its content; CSS min/max-height set the floor + cap.
+  @action
+  autoGrow(el) {
+    if (!el) {
+      return;
+    }
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }
+
+  @action
   updateValue(event) {
     this.value = event.target.value;
+    this.autoGrow(event.target);
   }
 
   @action
@@ -75,6 +95,7 @@ export default class SecondBrainChatReply extends Component {
       });
       this.value = "";
       this.attachments = [];
+      next(() => this.autoGrow(this.inputEl)); // shrink back to the default after sending
       // Append our new post (no-ops if the message bus already added it).
       await this.topic.postStream.triggerNewPostsInStream([post.id], {
         background: false,
@@ -95,6 +116,7 @@ export default class SecondBrainChatReply extends Component {
           rows="2"
           value={{this.value}}
           disabled={{this.submitting}}
+          {{didInsert this.registerInput}}
           {{on "input" this.updateValue}}
           {{on "keydown" this.handleKeydown}}
         ></textarea>

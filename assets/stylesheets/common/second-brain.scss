@@ -211,6 +211,9 @@ body.archetype-private_message {
     padding: 0;
     font-size: var(--font-up-1);
     line-height: 1.5;
+    min-height: 4.5em; // ~3 rows: the comfortable default; JS grows it with content
+    max-height: 40vh; // then cap + scroll, so it never eats the screen
+    overflow-y: auto;
 
     &:focus {
       outline: none;
@@ -369,6 +372,11 @@ body.archetype-private_message {
 // The inline reply box at the bottom of a chat (reuses .sb-starter styling).
 .sb-chat-reply {
   margin: 16px 0 8px;
+
+  // The reply box starts a touch shorter than the homepage one (2 rows vs 3).
+  .sb-starter__input {
+    min-height: 3em;
+  }
 
   // Here the "link" slot is a keyboard hint, not a link — keep it muted.
   .sb-starter__link {
