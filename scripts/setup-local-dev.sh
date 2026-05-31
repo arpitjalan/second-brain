@@ -196,9 +196,18 @@ fi
 # --- 6. wire the agent: family -> global settings; personal -> registry row --
 say "Configuring plugin settings"
 if [ "$PERSONAL" = true ]; then
-  ( cd "$DISCOURSE_DIR" && SB_BOT="$BOT_USERNAME" SB_URL="$AGENT_URL" SB_TOKEN="$WEB_TOKEN" SB_OWNER="$OWNER" bin/rails runner '
-  bot = User.find_by(username_lower: ENV["SB_BOT"].downcase)
-  owner = User.find_by(username_lower: ENV["SB_OWNER"].downcase)
+  # A personal agent lives in the second_brain_agents registry table — which a
+  # fresh checkout won't have until the plugin migration runs. Apply it first, or
+  # the insert below would fail (and we no longer hide that failure).
+  ( cd "$DISCOURSE_DIR" && bin/rails db:migrate ) >/dev/null 2>&1 \
+    || die "Could not apply plugin migrations (the second_brain_agents table).\n  Run:  cd $DISCOURSE_DIR && bin/rails db:migrate\n  then re-run this script."
+
+  # Capture the runner's output (incl. errors) instead of >/dev/null'ing it, then
+  # insist the row was actually written — a swallowed insert is what made a
+  # personal agent silently not show up.
+  REG=$( cd "$DISCOURSE_DIR" && SB_BOT="$BOT_USERNAME" SB_URL="$AGENT_URL" SB_TOKEN="$WEB_TOKEN" SB_OWNER="$OWNER" bin/rails runner '
+  bot = User.find_by(username_lower: ENV["SB_BOT"].downcase) or abort "bot user not found: #{ENV["SB_BOT"]}"
+  owner = User.find_by(username_lower: ENV["SB_OWNER"].downcase) or abort "owner not found: #{ENV["SB_OWNER"]}"
   row = SecondBrain::AgentRecord.find_or_initialize_by(bot_user_id: bot.id)
   row.update!(
     term_llm_url: ENV["SB_URL"],
@@ -208,8 +217,14 @@ if [ "$PERSONAL" = true ]; then
     forum_role: "tl4",
   )
   SiteSetting.second_brain_forum_actions_enabled = true
-  puts "  registry: #{bot.username} -> #{ENV["SB_URL"]} (owner=#{owner.username}, tl4)"
-  ' 2>/dev/null )
+  puts "OK registry: #{bot.username} -> #{ENV["SB_URL"]} (owner=#{owner.username}, tl4)"
+  ' 2>&1 ) || true
+  if echo "$REG" | grep -q "^OK registry:"; then
+    echo "$REG" | grep "^OK registry:" | sed 's/^OK /  /'
+  else
+    echo "$REG" | sed 's/^/  /' >&2
+    die "Failed to register the personal agent — the registry row was NOT written (see above)."
+  fi
 else
   ( cd "$DISCOURSE_DIR" && SB_URL="$AGENT_URL" WEB_TOKEN="$WEB_TOKEN" bin/rails runner '
   SiteSetting.second_brain_term_llm_url = ENV["SB_URL"]
@@ -218,6 +233,14 @@ else
   puts "  url=#{SiteSetting.second_brain_term_llm_url} forum_actions=#{SiteSetting.second_brain_forum_actions_enabled}"
   ' 2>/dev/null )
 fi
+
+# --- 6b. seed the calm forum layout (idempotent) -----------------------------
+# Initial plugin setup: hide the welcome banner, collapse top menu, turn off
+# chat, enable reactions. A rake task (not a migration) since it's just settings.
+say "Applying second-brain forum defaults (rake second_brain:setup)"
+SEED_OUT=$( cd "$DISCOURSE_DIR" && bin/rake second_brain:setup 2>&1 ) \
+  || die "second_brain:setup failed:\n$(echo "$SEED_OUT" | sed 's/^/  /')"
+echo "$SEED_OUT" | grep "second_brain:setup" | sed 's/^/  /'
 
 # --- 7. restart the agent so it discovers the skill --------------------------
 say "Restarting $AGENT (skills are scanned at startup)"
@@ -229,8 +252,11 @@ echo "$AGENT back up"
 
 # --- 8. verify the agent -> Discourse path -----------------------------------
 say "Verifying $AGENT -> Discourse path"
+# `|| true`: the whole point of this step is to detect a FAILING agent->Discourse
+# path, and a failing curl exits non-zero — without this, `set -e` would kill the
+# script here (skipping the diagnostics below and the final summary).
 CODE=$(docker exec -u agent "$CONTAINER" zsh -c \
-  'curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 -m 8 -H "Api-Key: $DISCOURSE_API_KEY" -H "Api-Username: $DISCOURSE_BOT_USERNAME" "$DISCOURSE_URL/session/current.json"' 2>/dev/null)
+  'curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 -m 8 -H "Api-Key: $DISCOURSE_API_KEY" -H "Api-Username: $DISCOURSE_BOT_USERNAME" "$DISCOURSE_URL/session/current.json"' 2>/dev/null) || true
 CODE=${CODE:-000}   # curl prints 000 on connect failure; default if the exec itself produced nothing
 
 if [ "$CODE" = "200" ]; then
@@ -260,4 +286,20 @@ else
     echo "  Discourse, forwarder, and firewall look fine — check the bot's API key /"
     echo "  username in $AGENT's .zshenv (re-run with --new-key to rotate the key)."
   fi
+fi
+
+# --- 9. final summary --------------------------------------------------------
+if [ "$PERSONAL" = true ]; then
+  printf '\n\033[1;32m== Personal agent ready ==\033[0m\n'
+  echo "  agent:  $BOT_USERNAME   (TL4, private to $OWNER)"
+  echo "  url:    $AGENT_URL"
+  echo "  owner:  $OWNER"
+  printf '\n  \033[1mOne more step:\033[0m a personal agent adds a DB table + row, so the running\n'
+  echo "  Discourse server must be restarted to pick them up:"
+  printf '\n      \033[1mcd %s && bin/dev\033[0m\n\n' "$DISCOURSE_DIR"
+  echo "  Then reload the homepage as $OWNER → you'll see an agent switcher"
+  echo "  (family $AGENT + your $BOT_USERNAME), and $BOT_USERNAME stays private to you."
+else
+  printf '\n\033[1;32m== Done — family agent '\''%s'\'' configured ==\033[0m\n' "$BOT_USERNAME"
+  echo "  Restart Discourse if any Ruby/settings changed:  cd $DISCOURSE_DIR && bin/dev"
 fi
