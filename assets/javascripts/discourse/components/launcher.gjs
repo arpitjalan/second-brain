@@ -82,12 +82,11 @@ export default class Launcher extends Component {
     return this.siteSettings.second_brain_bot_username || "stan";
   }
 
-  // The agent the composer targets. With no choice (just the family agent), keep
-  // the configured bot name verbatim; otherwise show the selected agent's name.
+  // The agent the composer targets — shown as its display name (the bot user's
+  // "Full name", which reads as a proper noun like "Stan"), for the lone family
+  // agent and a switcher choice alike. Falls back to the configured username
+  // before the agents list has loaded.
   get composerBotName() {
-    if (!this.showAgentSwitcher) {
-      return this.botUsername;
-    }
     const a = this.agents.find((x) => x.username === this.selectedAgent);
     return a?.name || this.botUsername;
   }
@@ -285,13 +284,21 @@ export default class Launcher extends Component {
 
       {{#if this.currentUser}}
         {{#if this.showAgentSwitcher}}
-          <div class="sb-agent-switch" role="group" aria-label="Choose an agent">
+          <div
+            class="sb-agent-switch"
+            role="group"
+            aria-label="Choose an agent"
+          >
             {{#each this.agents as |a|}}
               <button
                 type="button"
                 class="sb-agent-switch__pill
                   {{if (eq a.username this.selectedAgent) 'is-active'}}"
-                aria-pressed={{if (eq a.username this.selectedAgent) 'true' 'false'}}
+                aria-pressed={{if
+                  (eq a.username this.selectedAgent)
+                  "true"
+                  "false"
+                }}
                 {{on "click" (fn this.selectAgent a.username)}}
               >
                 {{a.name}}
@@ -316,7 +323,9 @@ export default class Launcher extends Component {
             <div class="sb-attach-files">
               {{#each this.attachments as |file index|}}
                 <span class="sb-attach__chip">
-                  <span class="sb-attach__name">{{file.original_filename}}</span>
+                  <span
+                    class="sb-attach__name"
+                  >{{file.original_filename}}</span>
                   <DButton
                     @action={{fn this.removeAttachment index}}
                     @icon="xmark"
@@ -329,7 +338,10 @@ export default class Launcher extends Component {
           {{/if}}
           <div class="sb-starter__actions">
             <span class="sb-starter__left">
-              <SbAttach @onAdd={{this.addAttachment}} @disabled={{this.starting}} />
+              <SbAttach
+                @onAdd={{this.addAttachment}}
+                @disabled={{this.starting}}
+              />
               <a class="sb-starter__link" href={{this.myChatsUrl}}>Your chats</a>
             </span>
             <DButton
@@ -366,17 +378,24 @@ export default class Launcher extends Component {
 
         {{#if this.hasBoard}}
           <div class="sb-board">
-            {{#if this.recent.length}}
-              <div class="sb-board__col">
-                <h2 class="sb-board__heading">Your recent chats</h2>
+            <div class="sb-board__col">
+              <h2 class="sb-board__heading">Your recent chats</h2>
+              {{#if this.recent.length}}
                 {{#each this.recent as |card|}}
                   <a class="sb-board__card" href={{card.url}}>
                     <span class="sb-board__title">{{card.title}}</span>
                     <span class="sb-board__meta">{{card.age}}</span>
                   </a>
                 {{/each}}
-              </div>
-            {{/if}}
+              {{else}}
+                <div class="sb-board__empty">
+                  <span class="sb-board__empty-title">No chats yet</span>
+                  <span class="sb-board__empty-text">
+                    Start one above and it'll show up here.
+                  </span>
+                </div>
+              {{/if}}
+            </div>
             {{#if this.interesting.length}}
               <div class="sb-board__col">
                 <h2 class="sb-board__heading">Interesting topics</h2>

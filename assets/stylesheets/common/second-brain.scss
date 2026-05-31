@@ -876,6 +876,29 @@ body.archetype-private_message {
     font-size: var(--font-down-2);
     color: var(--primary-medium);
   }
+
+  // First-run placeholder in the "Your recent chats" column, so the two-column
+  // grid stays balanced before the member has any chats (instead of the lone
+  // "Interesting topics" column drifting to one side).
+  &__empty {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px dashed var(--primary-low-mid);
+    background: transparent;
+  }
+
+  &__empty-title {
+    font-weight: 500;
+    color: var(--primary-medium);
+  }
+
+  &__empty-text {
+    font-size: var(--font-down-2);
+    color: var(--primary-medium);
+  }
 }
 
 // Board empty / error note.
