@@ -92,9 +92,9 @@ describe SecondBrain::WidgetsController do
       fam = widgets.find { |w| w["mount"] == "famwidget" }
       mine = widgets.find { |w| w["mount"] == "mine" }
       expect(fam["owned"]).to eq(false)
-      expect(fam["url"]).to eq("/second-brain/widgets/famwidget")
+      expect(fam["url"]).to eq("/second-brain/widgets/famwidget/") # trailing slash so relative fetches resolve
       expect(mine["owned"]).to eq(true)
-      expect(mine["url"]).to eq("/second-brain/agent-widgets/stan_arpit/mine")
+      expect(mine["url"]).to eq("/second-brain/agent-widgets/stan_arpit/mine/")
     end
 
     it "never lists another member's personal widgets" do

@@ -126,7 +126,7 @@ module ::SecondBrain
           state: w["state"],
           agent: agent.user.username,
           owned: !agent.shared?,
-          url: "#{prefix}#{mount}",
+          url: "#{prefix}#{mount}/", # trailing slash: the widget's relative fetches (e.g. `api/jobs`) only resolve right when the page URL ends in `/`
         }
       end
     rescue SocketError, Timeout::Error, Errno::ECONNREFUSED, Errno::EHOSTUNREACH
