@@ -11,12 +11,19 @@ REST API (create topics, reply, search, send PMs). The bot always acts as
 
 ### Deploy (on the term-llm server)
 
-1. Copy the skill into the bot's skills directory:
+1. Install the skill into the bot's skills directory. Fetch it straight from
+   GitHub (no checkout needed — once the repo is public), or `cp` it if you have
+   the repo on the host:
    ```bash
    mkdir -p ~/.config/term-llm/skills/discourse
-   cp skills/discourse/SKILL.md ~/.config/term-llm/skills/discourse/SKILL.md
+   # from GitHub:
+   curl -fsSL https://raw.githubusercontent.com/arpitjalan/second-brain/main/term-llm/skills/discourse/SKILL.md \
+     -o ~/.config/term-llm/skills/discourse/SKILL.md
+   # …or from a checkout:  cp term-llm/skills/discourse/SKILL.md ~/.config/term-llm/skills/discourse/SKILL.md
    term-llm skills validate discourse   # optional
    ```
+   (While the repo is private, add `-H "Authorization: token <PAT>"` to the curl,
+   or `scp` the file over.)
 2. Set these env vars for the `term-llm serve` process:
    ```bash
    export DISCOURSE_URL="https://<forum-url-reachable-from-term-llm>"   # NO trailing slash
