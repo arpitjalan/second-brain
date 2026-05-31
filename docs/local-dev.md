@@ -188,11 +188,17 @@ for it.
    ```
 
 2. **Allow the container subnet through ufw** (if ufw is active — check with
-   `sudo ufw status`). This is the one step that needs sudo:
+   `sudo ufw status`). This is the one step that needs sudo. Because **each agent
+   gets a new docker subnet** (stan `172.18.0.0/16`, jarvis `172.19.0.0/16`, …),
+   allow the whole docker range **once** so every present + future agent is covered:
    ```bash
-   sudo ufw allow from "$SUBNET" to any port 3000 proto tcp comment 'dev: stan->discourse'
+   sudo ufw allow from 172.16.0.0/12 to any port 3000 proto tcp comment 'dev: containers->discourse'
    ```
-   Without this, the container→host hop is silently dropped (connection times out).
+   (Narrower, just one agent: `sudo ufw allow from "$SUBNET" to any port 3000 proto tcp`.)
+   Without this, the container→host hop is refused/dropped — the agent reaches
+   localhost for chat but **can't act on the forum** (create topics etc.), and its
+   API calls time out. This is per-firewall, not per-trust-level: the bot is TL4
+   and allowed to post; it just can't reach Discourse.
 
 Using an **IP** (the gateway) as the host also sidesteps Rails' "Blocked hosts"
 guard — Discourse dev allows all IPs by default, so no host-auth config needed.

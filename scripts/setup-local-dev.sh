@@ -279,9 +279,11 @@ else
     echo "  See /tmp/sb-fwd.log:"
     tail -3 /tmp/sb-fwd.log 2>/dev/null | sed 's/^/    /'
   elif systemctl is-active --quiet ufw 2>/dev/null; then
-    echo "  Discourse + forwarder are up, so ufw is likely dropping the container->host"
-    echo "  hop. Run (needs sudo), then re-test:"
-    printf '\n    \033[1msudo ufw allow from %s to any port 3000 proto tcp comment '"'"'second-brain dev: container->discourse'"'"'\033[0m\n\n' "$SUBNET"
+    echo "  Discourse + forwarder are up, so ufw is blocking the container->host hop."
+    echo "  Each agent gets a NEW docker subnet, so allow the whole docker range ONCE"
+    echo "  (covers $AGENT + every future agent); run (needs sudo), then re-test:"
+    printf '\n    \033[1msudo ufw allow from 172.16.0.0/12 to any port 3000 proto tcp comment '"'"'second-brain dev: containers->discourse'"'"'\033[0m\n'
+    printf '\n  (narrower — just this agent'"'"'s subnet: \033[1msudo ufw allow from %s to any port 3000 proto tcp\033[0m)\n\n' "$SUBNET"
   else
     echo "  Discourse, forwarder, and firewall look fine — check the bot's API key /"
     echo "  username in $AGENT's .zshenv (re-run with --new-key to rotate the key)."
