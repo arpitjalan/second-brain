@@ -6,6 +6,9 @@
 #     bin/rake second_brain:setup      # seed the calm "second brain" forum layout
 #     bin/rake second_brain:lockdown   # make the forum private (before real family use)
 #
+#   Family agent (point it at a term-llm endpoint — writes the global settings):
+#     SB_URL=https://host/chat SB_TOKEN=… [SB_MODEL=gpt-5.5] bin/rake second_brain:set_family_agent
+#
 #   Per-user (personal) agents — the PROD provisioning path (local dev uses
 #   scripts/setup-local-dev.sh --owner, which also spins up the docker container):
 #     SB_BOT=jarvis SB_OWNER=arpit SB_URL=https://host/chat SB_TOKEN=… \
@@ -87,6 +90,36 @@ namespace :second_brain do
       puts "  #{name}: #{was} -> #{value}"
     end
     puts "second_brain:lockdown — forum is now private (login required, invite-only, noindex)."
+  end
+
+  desc "Point the family agent at a term-llm endpoint (ENV: SB_URL SB_TOKEN; optional SB_MODEL)"
+  task set_family_agent: :environment do
+    url = ENV["SB_URL"].to_s.strip
+    token = ENV["SB_TOKEN"].to_s.strip
+
+    missing = { "SB_URL" => url, "SB_TOKEN" => token }.select { |_, v| v.empty? }.keys
+    if missing.any?
+      abort "Missing #{missing.join(", ")}.\n" \
+              "Usage: SB_URL=https://host/chat SB_TOKEN=… [SB_MODEL=gpt-5.5] " \
+              "bin/rake second_brain:set_family_agent"
+    end
+
+    changes = {
+      "second_brain_term_llm_url" => url,
+      "second_brain_term_llm_api_key" => token,
+    }
+    # Only touch the model when SB_MODEL is given (passing it empty clears it = use
+    # term-llm's default); omitting SB_MODEL leaves the current model untouched.
+    changes["second_brain_term_llm_model"] = ENV["SB_MODEL"].to_s.strip if ENV.key?("SB_MODEL")
+
+    changes.each do |name, value|
+      secret = name.end_with?("api_key")
+      was = SiteSetting.get(name)
+      SiteSetting.set(name, value)
+      puts "  #{name}: #{secret ? sb_mask(was) : was.presence || "(unset)"} -> #{secret ? sb_mask(value) : value.presence || "(default)"}"
+    end
+    puts "second_brain:set_family_agent — family agent now points at #{url}."
+    puts "  (Chat works now. Forum actions still need the bot's Discourse API key on the term-llm host.)"
   end
 
   desc "Register/update a personal agent (ENV: SB_BOT SB_OWNER SB_URL SB_TOKEN; optional SB_MODEL SB_NEW_KEY)"
