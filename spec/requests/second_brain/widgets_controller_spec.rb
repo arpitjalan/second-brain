@@ -37,6 +37,28 @@ describe SecondBrain::WidgetsController do
       expect(stub).to have_been_requested
     end
 
+    it "rewrites absolute widget-base paths in the HTML back to the owning agent" do
+      html = +'<a href="/chat/widgets/sub">x</a>' \
+        '<script>fetch("/second-brain/widgets/data")</script>' \
+        '<img src="relative/pic.png">'
+      stub_request(:get, "http://personal.test/chat/widgets/dash").to_return(
+        status: 200,
+        body: html,
+        headers: { "Content-Type" => "text/html" },
+      )
+
+      sign_in(owner)
+      get "/second-brain/agent-widgets/stan_arpit/dash"
+      expect(response.status).to eq(200)
+      # absolute term-llm + family-proxy refs now point at THIS agent's prefix...
+      expect(response.body).to include("/second-brain/agent-widgets/stan_arpit/sub")
+      expect(response.body).to include("/second-brain/agent-widgets/stan_arpit/data")
+      expect(response.body).not_to include("/chat/widgets/")
+      expect(response.body).not_to include("/second-brain/widgets/")
+      # ...while relative refs (the common case) are left untouched.
+      expect(response.body).to include('src="relative/pic.png"')
+    end
+
     it "forbids a non-owner from loading someone else's personal widget" do
       sign_in(other)
       get "/second-brain/agent-widgets/stan_arpit/chore/"

@@ -53,9 +53,11 @@ module ::SecondBrain
       upstream = fetch_following_redirects(URI.parse(target), agent)
 
       content_type = upstream["content-type"].presence || "application/octet-stream"
+      body = upstream.body.to_s
+      body = rewrite_widget_base(body, agent) if content_type.include?("html")
       response.headers["Cache-Control"] = "no-store"
       response.headers["Content-Security-Policy"] = WIDGET_CSP
-      render body: upstream.body, status: upstream.code.to_i, content_type: content_type
+      render body: body, status: upstream.code.to_i, content_type: content_type
     rescue SocketError, Timeout::Error, Errno::ECONNREFUSED, Errno::EHOSTUNREACH => e
       render plain: "Could not reach the widget: #{e.message}", status: :bad_gateway
     end
@@ -79,6 +81,21 @@ module ::SecondBrain
     # widget's own relative fetches inherit the agent.
     def widget_proxy_prefix(agent)
       agent.shared? ? "/second-brain/widgets/" : "/second-brain/agent-widgets/#{agent.user.username}/"
+    end
+
+    # Keep a widget page talking to ITS agent. term-llm widgets use relative paths
+    # today (which already inherit the agent-scoped prefix), but a widget that
+    # hardcodes an ABSOLUTE widget-base — the term-llm one (e.g. "/chat/widgets/…")
+    # or the family proxy ("/second-brain/widgets/…") — would otherwise escape a
+    # personal agent and hit the family proxy. Rewrite those back to this agent's
+    # prefix. No-op on current widgets; only the main HTML document is rewritten
+    # (JS-constructed URLs are out of scope — see docs/TODO.md, separate-origin work).
+    def rewrite_widget_base(body, agent)
+      prefix = widget_proxy_prefix(agent)
+      termllm_widgets = "#{URI.parse(agent.url).path.to_s.sub(%r{/+\z}, "")}/widgets/"
+      body = body.gsub(termllm_widgets, prefix) unless termllm_widgets == prefix
+      body = body.gsub("/second-brain/widgets/", prefix) unless agent.shared?
+      body
     end
 
     # The widgets for one agent, tagged with its identity + proxy urls.

@@ -121,26 +121,26 @@ before any less-trusted member joins.
 
 ---
 
-## 2. Family agent + per-user agents (feature — planned)
+## 2. Family agent + per-user agents (feature — SHIPPED)
 
-Move from one shared agent to a shared family `stan` + opt-in per-user personal
-agents (distinct named bots, one term-llm container each, behind an agent
-registry). Personal agents are TL4 (non-admin) forum users, private to their
-owner; the launcher defaults to your agent with a switcher. **Firm plan + change
-surface + phased rollout in `docs/design-multi-agent.md`.** Safe first step is the
-behaviour-neutral agent-registry refactor (one agent == today's behaviour).
+Shared family `stan` + opt-in per-user personal agents (distinct named bots, one
+term-llm container each, behind the `second_brain_agents` registry). Personal
+agents are TL4 (non-admin), private to their owner; the launcher defaults to your
+agent (last choice remembered) with a switcher. Multiple agents per owner work.
+**Design in `docs/design-multi-agent.md`.** Merged to `main`.
 
-**Known limitation (personal widgets):** a personal agent's widget is proxied at
-`/second-brain/agent-widgets/<agent>/<mount>/`, so the widget's *relative*
-subresource fetches inherit the agent — but *absolute* ones (`/widgets/…` or
-`/second-brain/widgets/…`, which term-llm widgets sometimes emit) fall back to the
-family proxy. Not a cross-user leak (it routes to the user's own family agent, no
-token exposure), but a personal widget that uses absolute paths would load the
-wrong data. Family widgets are unaffected. Fix when personal widgets are actually
-used: either rewrite absolute `/widgets/` refs in the proxied body to the
-agent-scoped prefix, or bind the agent to the iframe via a signed cookie/session
-scope (the cleaner, JS-URL-proof option). Verified by the review; deferred since
-no personal agent is provisioned yet.
+**Personal widgets — handled (was a known limitation).** A personal agent's
+widget is proxied at `/second-brain/agent-widgets/<agent>/<mount>/`, so its
+*relative* subresource fetches inherit the agent. The worry was *absolute* refs
+(`/chat/widgets/…` or `/second-brain/widgets/…`) escaping to the family proxy.
+Empirically, current term-llm widgets use **only relative paths** (verified by
+fetching the real HTML of job-usage/orbitarium/skill-manager/time-hn-notes — zero
+absolute refs), so this didn't bite in practice. As cheap insurance,
+`WidgetsController#rewrite_widget_base` now rewrites any absolute widget-base ref
+in the **HTML document** back to the owning agent's prefix (no-op on today's
+widgets; spec'd). **Residual:** absolute URLs built in **JS at runtime** still
+aren't covered — that's the same problem the separate-origin work (item 1) solves
+properly. Not a cross-user leak either way (no token exposure).
 
 ---
 
