@@ -50,8 +50,17 @@ PERSONAL=false
 
 # --- 0. discover the agent's container + its network --------------------------
 say "Discovering container for agent '$AGENT' + network"
-CONTAINER="${CONTAINER:-$(docker ps --format '{{.Names}}' | grep -E "contain-${AGENT}.*app" | head -1)}"
-[ -n "$CONTAINER" ] || die "No running container for agent '$AGENT' (expected ~ term-llm-contain-${AGENT}-app-1; pass the agent name or set CONTAINER=...). docker ps:\n$(docker ps --format '{{.Names}}')"
+# `|| true` so a no-match grep (no such container) doesn't trip `set -e` and exit
+# silently one line before the helpful error below.
+CONTAINER="${CONTAINER:-$(docker ps --format '{{.Names}}' | grep -E "contain-${AGENT}.*app" | head -1 || true)}"
+[ -n "$CONTAINER" ] || die "No running container for agent '$AGENT' (expected ~ term-llm-contain-${AGENT}-app-1).
+  This script wires up an EXISTING term-llm container — it doesn't create one.
+  Create + start it first, then re-run:
+      term-llm contain new $AGENT && term-llm contain start $AGENT
+      scripts/setup-local-dev.sh $AGENT${OWNER:+ --owner $OWNER}
+  (or set CONTAINER=... if it's named differently).
+  Running term-llm containers:
+$(docker ps --format '{{.Names}}' | grep -i contain | sed 's/^/    /' || echo '    (none)')"
 NET=$(docker inspect "$CONTAINER" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}')
 GW=$(docker network inspect "$NET" --format '{{(index .IPAM.Config 0).Gateway}}')
 SUBNET=$(docker network inspect "$NET" --format '{{(index .IPAM.Config 0).Subnet}}')
