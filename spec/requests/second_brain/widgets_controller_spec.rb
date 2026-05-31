@@ -90,6 +90,26 @@ describe SecondBrain::WidgetsController do
       get "/second-brain/agent-widgets/nobody/chore/"
       expect(response.status).to eq(404)
     end
+
+    it "forwards a widget's write (POST body + content-type) upstream with the agent's token" do
+      # Interactive widgets (e.g. movie-night-picker's "Add") POST to their backend;
+      # the proxy must carry the method, body, and content-type to term-llm — not just GET.
+      stub =
+        stub_request(:post, "http://personal.test/chat/widgets/movie-night-picker/api/movies")
+          .with(
+            headers: { "Authorization" => "Bearer pers-token", "Content-Type" => "application/json" },
+            body: '{"title":"Arrival"}',
+          )
+          .to_return(status: 201, body: '{"ok":true}', headers: { "Content-Type" => "application/json" })
+
+      sign_in(owner)
+      post "/second-brain/agent-widgets/stan_arpit/movie-night-picker/api/movies",
+           params: '{"title":"Arrival"}',
+           headers: { "Content-Type" => "application/json" }
+      expect(response.status).to eq(201)
+      expect(response.parsed_body["ok"]).to eq(true)
+      expect(stub).to have_been_requested
+    end
   end
 
   describe "GET /second-brain/list-widgets (aggregation + access)" do

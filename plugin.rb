@@ -83,8 +83,13 @@ after_initialize do
     # List the term-llm widgets across the member's agents (for the sidebar).
     get "/second-brain/list-widgets" => "second_brain/widgets#index"
     # Proxy a specific agent's widget pages/assets (with that agent's token).
-    get "/second-brain/agent-widgets/:agent/*path" => "second_brain/widgets#show", format: false
+    # Forward writes too (POST/PUT/PATCH/DELETE) so interactive widgets work.
+    match "/second-brain/agent-widgets/:agent/*path" => "second_brain/widgets#show",
+          format: false,
+          via: %i[get post put patch delete]
     # Legacy/family widget proxy (no agent segment) — keeps old embeds working.
-    get "/second-brain/widgets/*path" => "second_brain/widgets#show", format: false
+    match "/second-brain/widgets/*path" => "second_brain/widgets#show",
+          format: false,
+          via: %i[get post put patch delete]
   end
 end

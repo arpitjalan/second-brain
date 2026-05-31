@@ -16,6 +16,9 @@ module ::SecondBrain
     requires_plugin "second-brain"
     requires_login
     skip_before_action :check_xhr, only: %i[show], raise: false
+    # Widget writes (POST/PUT/…) are authenticated upstream by the agent's Bearer
+    # token, not Discourse's CSRF token — skip the forgery check for the proxy.
+    skip_before_action :verify_authenticity_token, only: %i[show], raise: false
 
     # Widgets are self-contained pages with inline scripts; Discourse's strict
     # CSP would block them. We set our own (permissive) CSP on the proxied
@@ -53,7 +56,14 @@ module ::SecondBrain
       target = +"#{base_url}/widgets/#{path}"
       target << "?#{request.query_string}" if request.query_string.present?
 
-      upstream, final_uri = fetch_following_redirects(URI.parse(target), agent)
+      upstream, final_uri =
+        fetch_following_redirects(
+          URI.parse(target),
+          agent,
+          method: request.request_method.downcase.to_sym,
+          body: request.raw_post.presence,
+          content_type: request.media_type,
+        )
 
       content_type = upstream["content-type"].presence || "application/octet-stream"
       body = upstream.body.to_s
@@ -168,9 +178,18 @@ module ::SecondBrain
     # exact term-llm origin (an SSRF guard) — pin scheme+host+port, not just host,
     # so a redirect can't downgrade to http or hop to another port on the same host
     # and leak the Bearer token there.
-    def fetch_following_redirects(uri, agent, open_timeout: 10, read_timeout: 30)
+    def fetch_following_redirects(
+      uri,
+      agent,
+      method: :get,
+      body: nil,
+      content_type: nil,
+      open_timeout: 10,
+      read_timeout: 30
+    )
       key = agent.token
       allowed_origin = [uri.scheme, uri.host, uri.port]
+      verb = Net::HTTP.const_get(method.to_s.capitalize) # Get / Post / Put / Patch / Delete
 
       5.times do
         raise Discourse::InvalidAccess if [uri.scheme, uri.host, uri.port] != allowed_origin
@@ -180,8 +199,12 @@ module ::SecondBrain
         http.open_timeout = open_timeout
         http.read_timeout = read_timeout
 
-        request = Net::HTTP::Get.new(uri)
+        request = verb.new(uri)
         request["Authorization"] = "Bearer #{key}" if key.present?
+        if body.present?
+          request.body = body
+          request["Content-Type"] = content_type if content_type.present?
+        end
         response = http.request(request)
 
         unless response.is_a?(Net::HTTPRedirection) && response["location"].present?
