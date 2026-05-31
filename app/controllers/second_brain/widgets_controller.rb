@@ -6,11 +6,14 @@ require "cgi"
 
 module ::SecondBrain
   # Reverse-proxies term-llm widget pages (and their assets/JSON) through
-  # Discourse, injecting the Bearer token server-side. The iframe loads
-  # /second-brain/widgets/<name>/… (same origin, authenticated by the Discourse
-  # session); we fetch <term-llm>/widgets/<name>/… with the token. This keeps
-  # the term-llm token out of the browser and the widget private to the family.
+  # Discourse, injecting the Bearer token server-side. The browser loads
+  # /second-brain/widgets/<name>/… (family agent) or
+  # /second-brain/agent-widgets/<agent>/<name>/… (a personal agent) — same origin,
+  # authenticated by the Discourse session; we fetch <term-llm>/widgets/<name>/…
+  # with that agent's token. This keeps the token out of the browser, and a
+  # personal agent's widgets private to their owner.
   class WidgetsController < ::ApplicationController
+    requires_plugin "second-brain"
     requires_login
     skip_before_action :check_xhr, only: %i[show], raise: false
 
@@ -28,10 +31,9 @@ module ::SecondBrain
       "frame-ancestors 'self'",
     ].join("; ").freeze
 
-    # Lists the family's term-llm widgets (for the sidebar). Pulls the JSON
-    # status from term-llm and returns mount/title/state for each.
-    # Aggregate widgets across the agents this member can access (the family
-    # agent + their own), each tagged with its agent + same-origin proxy url.
+    # The sidebar's widget list: aggregate widgets across the agents this member
+    # can access (the family agent + their own), each tagged with its agent +
+    # same-origin proxy url.
     def index
       widgets = Agent.available_to(current_user).flat_map { |agent| agent_widgets(agent) }
       render json: { widgets: widgets }

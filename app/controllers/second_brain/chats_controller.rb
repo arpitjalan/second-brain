@@ -2,6 +2,7 @@
 
 module ::SecondBrain
   class ChatsController < ::ApplicationController
+    requires_plugin "second-brain"
     requires_login
 
     # Start a chat with one message — no title/recipient friction. We create the
