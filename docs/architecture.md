@@ -27,7 +27,9 @@ host). Discourse is its face, its private container, and the knowledge base it a
        │ streamed reply  │        │  calls term-llm, streams cooked HTML over MessageBus  ◄───────┐               │
        └─────────────────┼────────┘                                                              │               │
                          │                                                                       │ A. chat (HTTP)│
-                         │   widget iframe ─► GET /second-brain/widgets/* (reverse proxy w/ token)│               │
+                         │   widget iframe ─► GET /second-brain/widgets/* (family) or             │               │
+                         │        /second-brain/agent-widgets/<agent>/* (personal); proxy injects │               │
+                         │        that agent's token                                             │               │
                          └───────────────────────────────────────────────────────────────────────┼───────────────┘
                                                                                                   ▼
                                                                                          ┌──────────────────┐
@@ -51,7 +53,11 @@ There are **two independent integration directions**, wired separately:
 1. **Start.** The homepage launcher (`components/launcher.gjs`) POSTs to
    `/second-brain/chats` (`chats_controller#create`), which creates a PM between the
    member and the bot user (a throwaway title) and returns its URL; the client routes
-   into Discourse's native PM view.
+   into Discourse's native PM view. `create` resolves **which agent** to chat with via
+   `create_agent` — the member's personal agent, the family agent, or a named `agent`
+   param (restricted to its owner). The launcher offers an **agent switcher**
+   (persisted per-user in `localStorage`) when the member has more than the family
+   agent.
 2. **Trigger.** Any new PM post fires `on(:post_created)` →
    `BotResponder.maybe_respond` (`plugin.rb`). Cheap synchronous **guards** run
    (plugin enabled, regular post, it's a PM, term-llm configured, author isn't the
@@ -79,10 +85,11 @@ request storm). Instead:
   `/second-brain/stream`, scoped to the PM's participants (`user_ids:`), throttled
   (`STREAM_THROTTLE`) but flushed immediately on tool start/finish. No DB write per
   tick. (`BotResponder#publish_stream`.)
-- **Client** (`api-initializers/second-brain-stream.js`) subscribes and updates the
-  **post model's `cooked`** via the topic post stream
-  (`controller:topic` → `postStream.findLoadedPost(id).set("cooked", html)`). Setting
-  DOM `innerHTML` directly does not work — Ember reverts it.
+- **Client** (`api-initializers/second-brain-stream.js`) subscribes and **morphs the
+  live `.cooked` DOM** via morphlex (`morphInner`) while streaming — like Discourse's
+  own AI streamer — and `preventCloak`s the post so it stays rendered. It sets the
+  **post model's `cooked`** only on the final message (and as a fallback when the post
+  element isn't on screen).
 - **Finalize.** The answer is persisted once (`update_columns(raw)` + `rebake!`) and a
   single `publish_change_to_clients!(:revised)` lets non-streaming viewers catch up.
 
@@ -95,15 +102,19 @@ long/multi-line values go in safely-fenced code blocks).
 term-llm serves widget pages at `{base}/widgets/<name>/`. The browser can't reach
 them directly (cross-site, needs term-llm's Bearer token), so:
 
-- `BotResponder#proxy_widget_links` rewrites widget links to a same-origin path
-  `/second-brain/widgets/<name>/`.
+- `BotResponder#proxy_widget_links` rewrites widget links to a same-origin path:
+  `/second-brain/widgets/<name>/` for the family agent, and
+  `/second-brain/agent-widgets/<owner>/<name>/` for a personal agent.
 - `widgets_controller#show` reverse-proxies that to term-llm, **injecting the Bearer
   token server-side**, following redirects **only on the term-llm host** (SSRF guard),
   and setting its own permissive CSP header (Discourse's CSP middleware skips responses
-  that already carry one; otherwise the widget's inline scripts are blocked).
+  that already carry one; otherwise the widget's inline scripts are blocked). For a
+  personal agent it also calls `#rewrite_widget_base` to rebind the widget's absolute
+  HTML refs to its own agent-scoped prefix.
 - The client (`api-initializers/second-brain-widgets.js`) embeds proxied links as
   sandboxed iframes; a sidebar section (`…-widgets-sidebar.js`) lists widgets from
-  `widgets_controller#index` (term-llm's `/admin/widgets/status`).
+  `widgets#index` at `GET /second-brain/list-widgets`, which aggregates each available
+  agent's `/admin/widgets/status`.
 
 **The term-llm Bearer token never reaches the browser** — it's a secret site setting
 used only server-side by the proxy and the chat client.
@@ -125,10 +136,12 @@ environment, never in the skill file or the conversation.
 | `lib/second_brain/bot.rb` | Find/create the bot user from `second_brain_bot_username` |
 | `lib/second_brain/bot_responder.rb` | Core: guards, transcript, streaming, tool rendering, auto-title, widget-link rewrite, forum context |
 | `lib/second_brain/term_llm_client.rb` | HTTP client to term-llm: `stream_respond` (agentic SSE), `respond`, `complete` (titling), SSE parsing |
-| `app/controllers/second_brain/chats_controller.rb` | `create` (start a chat PM), `make_public` (convert PM → public topic) |
+| `app/controllers/second_brain/chats_controller.rb` | `create` (start a chat PM, agent-aware), `make_public` (convert PM → public topic), `agents` (list agents for the switcher), `home` (homepage board), `answer` (resume an `ask_user` run) |
 | `app/controllers/second_brain/widgets_controller.rb` | Widget reverse proxy (`#show`) + listing (`#index`) |
+| `lib/second_brain/agent.rb` | `SecondBrain::Agent` abstraction — family + personal agents, resolution, per-agent client/token/model |
+| `app/models/second_brain/agent_record.rb` | `second_brain_agents` registry model |
 | `app/jobs/regular/second_brain_reply.rb` | Runs `respond!` off-request; swallows errors (no retry storm) |
-| `assets/javascripts/.../second-brain-stream.js` | Paints streamed cooked HTML onto the post model |
+| `assets/javascripts/.../second-brain-stream.js` | Streams cooked HTML into the post by morphing the live `.cooked` DOM (morphlex) |
 | `assets/javascripts/.../second-brain-widgets*.js` | Iframe decorator + widgets sidebar |
 | `assets/javascripts/.../second-brain-make-public.js` | "Make public" topic footer button |
 | `assets/javascripts/.../components/launcher.gjs` | Homepage "message stan" launcher |
@@ -151,6 +164,10 @@ environment, never in the skill file or the conversation.
 
 ## Cross-cutting design decisions & constraints
 
+- **Agent model.** One shared **family agent** (legacy routes/widgets) plus optional
+  **per-user personal agents** (owner-private, TL4), each with its own bot user, token,
+  model, and agent-scoped widget proxy; all resolved via `SecondBrain::Agent`. The
+  plugin now has request/unit specs under `spec/`.
 - **Symlinked plugin → manual require.** Discourse doesn't autoload a symlinked
   plugin's `app/` dirs, so controllers/jobs are `require_relative`'d in
   `after_initialize`. (Idiomatic long-term fix: the Rails **Engine** pattern.)

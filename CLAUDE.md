@@ -19,11 +19,14 @@ idempotent:
 ```bash
 scripts/setup-local-dev.sh        # set up / repair agent "stan" (the default)
 scripts/setup-local-dev.sh john   # a differently-named agent; --new-key rotates the bot key
+scripts/setup-local-dev.sh stan-arpit --owner arpit  # a PERSONAL agent (TL4, owner-private)
 ```
 
 The agent name is the first argument (defaults to `stan`) and drives both the
 container (`term-llm-contain-<agent>-app-1`) and the Discourse bot username — nothing
-is hardcoded to one name.
+is hardcoded to one name. Passing `--owner USER` provisions a per-user TL4 agent
+stored in the `second_brain_agents` registry (multiple agents per owner are
+supported); the bare/family agent has no owner and falls back to global settings.
 
 There's a Claude Code skill (`.claude/skills/local-dev-setup/`) that wraps this —
 use it when asked to "set up local dev", "connect stan", or "get the bot acting on
@@ -35,14 +38,20 @@ troubleshooting: `docs/local-dev.md`.
 ## Layout
 
 - `plugin.rb`, `lib/second_brain/` — bot wiring, term-llm HTTP client, streaming,
-  tool-call rendering, forum-context injection.
-- `app/`, `assets/` — controllers/jobs and the Discourse-side JS/SCSS (chat UI,
-  inline reply box, widget proxy + sidebar, streaming).
+  tool-call rendering, forum-context injection, plus the `SecondBrain::Agent`
+  abstraction (`agent.rb`) that resolves a chat/widget to its agent (family vs
+  personal).
+- `app/`, `assets/` — controllers/jobs (including the registry model
+  `app/models/second_brain/agent_record.rb`) and the Discourse-side JS/SCSS (chat
+  UI, inline reply box, widget proxy + sidebar, streaming). The widget proxy is
+  agent-aware (`/second-brain/agent-widgets/<agent>/*path`, legacy
+  `/second-brain/widgets/*path` kept for family).
 - `term-llm/` — the **bot side**: the `discourse` skill the bot uses to act on the
   forum, plus its own README (remote/droplet deploy).
 - `config/`, `db/`, `lib/tasks/` — settings; the `second_brain_agents` schema
-  migration; and `rake second_brain:setup` (idempotent calm-layout seeding —
-  settings, not schema, so a rake task rather than a migration).
+  migration; `rake second_brain:setup` (idempotent calm-layout seeding —
+  settings, not schema, so a rake task rather than a migration); and
+  `rake second_brain:lockdown` (login-required + invite-only + no search indexing).
 
 ## Conventions
 
@@ -50,4 +59,6 @@ troubleshooting: `docs/local-dev.md`.
   restart**; JS/SCSS hot-reload.
 - Lint before committing: `cd ~/discourse && bin/lint --fix <files>` (the `.gjs`
   parser only resolves from inside the Discourse checkout via the symlinked path).
+- Tests: `cd ~/discourse && bin/rspec plugins/second-brain/spec` (plugin specs only
+  resolve from inside the Discourse checkout).
 - Commit only when the user asks.

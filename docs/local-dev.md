@@ -61,7 +61,9 @@ CONTAINER=$(docker ps --format '{{.Names}}' | grep -E "contain-${AGENT}.*app" | 
 NET=$(docker inspect "$CONTAINER" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}')
 GW=$(docker network inspect "$NET" --format '{{(index .IPAM.Config 0).Gateway}}')   # e.g. 172.18.0.1
 SUBNET=$(docker network inspect "$NET" --format '{{(index .IPAM.Config 0).Subnet}}') # e.g. 172.18.0.0/16
-echo "agent=$AGENT  container=$CONTAINER  gateway=$GW  subnet=$SUBNET"
+# Each `contain` publishes its internal :8081 to a DISTINCT auto-assigned host port — discover it:
+PORT=$(docker port "$CONTAINER" 8081 | sed -n 's/.*:\([0-9]*\)$/\1/p' | head -1); PORT=${PORT:-8081}
+echo "agent=$AGENT  container=$CONTAINER  gateway=$GW  subnet=$SUBNET  port=$PORT"
 
 # How the container reaches the host (used in B3/B4):
 case "$(uname -s)" in
@@ -90,13 +92,15 @@ In Discourse: **Admin → Settings → Plugins** (search "second brain"), or via
 
 | Setting | Value |
 |---|---|
-| `second_brain_term_llm_url` | `http://localhost:8081/chat` |
+| `second_brain_term_llm_url` | `http://localhost:$PORT/chat` |
 | `second_brain_term_llm_api_key` | the `WEB_TOKEN` from A1 |
 | `second_brain_bot_username` | `stan` (or your bot's username) |
 | `second_brain_term_llm_model` | leave blank (stan's default) |
 
-`localhost:8081` works because the container publishes that port to the host
-(`docker ps` shows `0.0.0.0:8081->8081/tcp`).
+`localhost:$PORT` works because the container publishes its internal `:8081` to the
+host — but the **host** port can differ per agent (it's auto-assigned; `8081` is just
+the default container's). Check `docker ps`, which shows e.g. `0.0.0.0:$PORT->8081/tcp`,
+or use the `$PORT` discovered in the prerequisites block.
 
 ### A3. Verify
 

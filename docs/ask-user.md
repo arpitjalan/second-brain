@@ -21,7 +21,8 @@ session id — so a *different* client/process can answer it later.
   ```
 - **Session id is client-controlled:** send request header `session_id: sb_<topic_id>`
   on `POST /v1/responses`. The run is then addressable by that id.
-- **Answer / resume** (any client, any time): `POST /v1/sessions/{session_id}/ask_user`
+- **Answer / resume** (connection-independent — term-llm's resume is session-keyed,
+  not connection-bound, so a different process can answer later): `POST /v1/sessions/{session_id}/ask_user`
   ```json
   { "call_id": "call_…", "answers": [
     { "question_index": 0, "header": "Trip style", "selected": "Road trip",
@@ -53,6 +54,11 @@ The mismatch: Discourse streams the run in a **Sidekiq job**, but the user answe
 **later from a browser** — a different process. This works because resume is
 session-keyed, not connection-bound.
 
+term-llm itself will accept the answer from any process; Discourse adds the access
+rule. For the **family/shared** agent, any chat participant may answer. For a
+**personal** (owner-private) agent, the `/second-brain/answer` controller restricts
+answering to the agent's owner (or staff) — being a PM participant isn't enough.
+
 ```
 ASK    job → POST /v1/responses (header session_id=sb_<topic_id>), stream
 PAUSE  job sees response.ask_user.prompt → persist state on the post → DISCONNECT
@@ -76,7 +82,8 @@ RESUME controller marks the post answered + enqueues a resume job
 
 | File | Role |
 |---|---|
-| `lib/second_brain/term_llm_client.rb` | `stream_respond(session_id:)` parses the `id:`/`response.created`/`ask_user.prompt` events and returns `{text,tools,ask_user,response_id,last_seq}`; `stream_events(response_id:,after:)` reconnects; `submit_ask_user(...)` answers (raises `Expired` on 404/409) |
+| `lib/second_brain/agent.rb` | `Agent.for_topic` selects the agent participating in the chat (family or personal); `Agent#client` returns a `TermLlmClient` bound to that agent's url/token/model. Streaming/answering goes through `@agent.client` — every term-llm call below is routed via the chat's agent |
+| `lib/second_brain/term_llm_client.rb` | `stream_respond(session_id:)` parses the `id:`/`response.created`/`ask_user.prompt` events and returns `{text,tools,ask_user,response_id,last_seq}`; `stream_events(response_id:,after:)` reconnects; `submit_ask_user(...)` answers (raises `Expired` on 404/409) — passing `cancelled: true` skips the question (sends `{cancelled:true}` instead of `answers`), and the controller records `skipped`/returns `skipped:true` |
 | `lib/second_brain/bot_responder.rb` | `respond!`→`conclude` pauses or finalizes; `pause_for_ask_user` persists state + refreshes clients once; `resume!` streams the continuation, seeded with the pre-prompt text |
 | `app/controllers/second_brain/chats_controller.rb` | `answer` — validates, submits to term-llm, marks answered, enqueues the resume job (`410` on expiry) |
 | `app/jobs/regular/second_brain_reply.rb` | `mode: "resume"` → `resume!` |
@@ -99,6 +106,10 @@ via the serialized field.
   deadline, durable cross-restart persistence (needs term-llm work).
 
 ## Manual test plan (needs a browser — restart Rails first; Ruby changed)
+
+The answer endpoint's access/privacy behavior is now covered by
+`spec/requests/second_brain/chats_controller_spec.rb`; the manual plan still covers
+the full browser round-trip + expiry the specs don't.
 
 1. Run term-llm with `--response-timeout 24h` (optional but recommended).
 2. In a chat, send a query that makes stan ask, e.g. *"Help me research a fun weekend

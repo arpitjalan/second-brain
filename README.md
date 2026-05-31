@@ -25,6 +25,9 @@ its face, its private container, and the knowledge base it can act on.
 - **Forum actions** — the bot can act on the forum (create topics, reply, search)
   via a term-llm skill.
 - **Make public** — turn a private chat into a topic the family can see.
+- **Multi-agent** — each member can have their own private (TL4, owner-only)
+  personal agent backed by its own term-llm container; the homepage launcher shows
+  an agent switcher and remembers your last pick.
 
 ## Architecture (one paragraph)
 
@@ -73,9 +76,11 @@ ln -s ~/work/second-brain ~/discourse/plugins/second-brain
 ```bash
 cd ~/work/second-brain && scripts/setup-local-dev.sh          # agent "stan" (default)
 cd ~/work/second-brain && scripts/setup-local-dev.sh john     # a differently-named agent
+cd ~/work/second-brain && scripts/setup-local-dev.sh stan-arpit --owner arpit  # a personal agent for one member (TL4, private)
 ```
 The agent name is an argument (defaults to `stan`) and drives both the container it
 talks to and the Discourse bot username, so nothing is pinned to one name.
+A personal agent needs a `bin/dev` restart to pick up its new DB row.
 This discovers the agent's container + docker network, points the plugin at local stan,
 makes the bot an admin with a Discourse API key, installs the `discourse` skill +
 credentials into stan, seeds the calm forum layout (`rake second_brain:setup`), wires
@@ -84,9 +89,11 @@ the container→host path, and verifies the round-trip.
 `cd ~/discourse && bin/rake second_brain:setup` — it's idempotent and only touches
 settings still at their factory default.)
 The script is **OS-aware**: on Linux it starts the host forwarder and **prints one
-`sudo ufw` line** it can't run itself (run that, then re-run the script); on macOS it
-uses `host.docker.internal` and skips both. See [docs/local-dev.md](docs/local-dev.md)
-for what each step does.
+`sudo ufw` line** it can't run itself — a broad docker-range rule
+(`sudo ufw allow from 172.16.0.0/12 to any port 3000`), broad because each agent
+gets a new docker subnet so this covers current + future agents (run that, then
+re-run the script); on macOS it uses `host.docker.internal` and skips both. See
+[docs/local-dev.md](docs/local-dev.md) for what each step does.
 
 ### 3. Let questions wait for a human (recommended)
 
@@ -151,6 +158,8 @@ revert. Without it the forum is publicly reachable and search-indexed.
 
 - **Ruby changes** (`plugin.rb`, controllers, jobs, settings) need a full `bin/dev`
   restart; **JS/SCSS hot-reload**.
+- Tests live in `spec/` (RSpec request + lib specs); run from the Discourse
+  checkout, e.g. `cd ~/discourse && bin/rspec plugins/second-brain/spec`.
 - Lint before committing: `cd ~/discourse && bin/lint --fix <files>`. The `.gjs`
   parser only resolves from inside the Discourse checkout (via the symlinked path).
 - The term-llm Bearer token and the bot's Discourse admin key are **secrets** — they

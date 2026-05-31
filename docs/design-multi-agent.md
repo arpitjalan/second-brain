@@ -1,10 +1,11 @@
 # Design: family agent + per-user agents
 
-Status: **built on branches, not yet merged.** Phase 1 (behaviour-neutral Agent
-abstraction) is on `multi-agent-phase1`; Phase 2 (registry, per-user agents,
-routing, access control, launcher switcher, agent-aware widgets, provisioning) is
-on `multi-agent-phase2`, stacked on Phase 1. Verified by RSpec
-(`spec/lib/second_brain/agent_spec.rb`, `spec/requests/second_brain/chats_controller_spec.rb`).
+Status: **shipped — merged to `main`.** Phase 1 (behaviour-neutral Agent
+abstraction) and Phase 2 (registry, per-user agents, routing, access control,
+launcher switcher, agent-aware widgets, provisioning) are both in. Verified by
+RSpec — 23 examples across `spec/lib/second_brain/agent_spec.rb`,
+`spec/requests/second_brain/chats_controller_spec.rb`, and
+`spec/requests/second_brain/widgets_controller_spec.rb`.
 To actually run a personal agent, provision one (see `docs/local-dev.md` →
 "Add a personal agent"). Companion to `docs/architecture.md`.
 
@@ -98,6 +99,8 @@ so each personal agent can be a different model/personality — set at provision
 - A small **switcher** lists the agents this user may talk to (family stan +
   their own personal agent). `chats_controller#create` takes an explicit
   `agent` (bot username) param; default resolved server-side.
+- The switcher **remembers your last-picked agent in `localStorage`** (keyed per
+  user), so it reopens to that agent instead of the server-resolved default.
 - `#home` "recent chats" matches **any agent bot** the user has chatted with.
 
 ### Widgets (agent-aware)
@@ -109,10 +112,15 @@ routing:
   status` across the agents the user can access (family + their own personal
   agent), tagging each entry with its agent; the sidebar groups them
   ("Family" / "Yours").
-- **Agent-aware proxy** — the proxy path encodes the agent
-  (`/second-brain/widgets/<agent>/<path>`); `#show` resolves that agent's
-  `term_llm_url` + token from the registry and proxies there. The redirect-origin
-  SSRF guard is then per-agent.
+- **Agent-aware proxy** — a personal agent's proxy path encodes the agent
+  (`/second-brain/agent-widgets/<agent>/<path>`); `#show` resolves that agent's
+  `term_llm_url` + token from the registry and proxies there. The legacy
+  `/second-brain/widgets/<path>` (no agent segment) is the **family** route, kept
+  so old embeds keep working. The redirect-origin SSRF guard is then per-agent.
+- **Agent-bound links** — `WidgetsController#rewrite_widget_base` rewrites a
+  personal widget's absolute HTML widget-base refs back to its own agent-scoped
+  prefix, so hardcoded absolute links stay bound to that agent (JS-constructed
+  URLs are out of scope — see `docs/TODO.md`).
 - **Access-controlled** — `#index`/`#show` only expose agents the user may use
   (family + their own), so a user never sees or loads another person's personal
   widgets.
@@ -128,25 +136,27 @@ routing:
   forum content** (the family KB) but its **term-llm memory is its own** (separate
   container) — private to its owner.
 
-## Provisioning (already half-built)
+## Provisioning
 
-`scripts/setup-local-dev.sh <agent>` is already agent-parameterized (spins up the
-container + a Discourse bot user). For personal agents, extend it to:
+`scripts/setup-local-dev.sh <agent> --owner <user>` provisions a personal agent
+(TL4, owner-private, with its own registry row). It:
 
-1. `term-llm contain new <agent>` + serve it on its **own host port** (stan→8081,
+1. `term-llm contain new <agent>` + serves it on its **own host port** (stan→8081,
    stan-arpit→8082, …); the registry stores that per-agent URL.
-2. Make the bot user **TL4 (not admin)** and mint a **user-scoped API key** (not
+2. Makes the bot user **TL4 (not admin)** and mints a **user-scoped API key** (not
    an admin key) for its forum actions.
-3. Insert/update the **registry row** (`bot_user_id`, url, token, `owner_user_id`,
+3. Inserts/updates the **registry row** (`bot_user_id`, url, token, `owner_user_id`,
    `forum_role: :tl4`).
-4. Bake the agent's forum creds into its container env (as today).
+4. Bakes the agent's forum creds into its container env (as today).
 
-So adding a personal agent = run the script with `--owner <username>`; **no
-plugin code change.**
+It also runs `db:migrate` + `rake second_brain:setup` and recommends a
+`sudo ufw allow from 172.16.0.0/12 to any port 3000` rule on Linux. So adding a
+personal agent = run the script with `--owner <username>`; **no plugin code
+change.**
 
 ## Change surface (sized from the code)
 
-Phase-1 refactor (behavior-neutral, one agent == today):
+Phase-1 refactor (behavior-neutral, one agent == today) — **shipped:**
 
 - `lib/second_brain/bot.rb` — `Bot.user` (one global) → `Agent.resolve(bot_user|topic)`.
 - New `lib/second_brain/agent.rb` + the registry table/model.
@@ -155,7 +165,7 @@ Phase-1 refactor (behavior-neutral, one agent == today):
 - `app/controllers/second_brain/chats_controller.rb` — `#create` targets the resolved agent + access check; `#home` matches any agent bot.
 - `app/controllers/second_brain/widgets_controller.rb` — `#index`/`#show` resolve the agent (from an `<agent>` path segment) and use its url/token; access-check the agent. (One agent == today.)
 
-Phase-2 (personal agents):
+Phase-2 (personal agents) — **shipped:**
 
 - `scripts/setup-local-dev.sh` — `--owner`, TL4 + user-scoped key, registry insert.
 - Launcher switcher + `agent` param; owner-privacy enforcement.
@@ -163,12 +173,12 @@ Phase-2 (personal agents):
 
 ## Phased plan
 
-1. **Agent-registry refactor** — generalize the single-bot wiring behind `Agent`,
-   seeded by the existing settings as the default/family agent. **Zero behavior
-   change** with one agent. (The safe, mergeable first step.)
-2. **Provisioning + access control + launcher switcher** — make personal agents a
-   config/ops step.
-3. **Polish (later)** — a small admin UI for the registry; revisit the term-llm
+1. **Agent-registry refactor** *(shipped)* — generalize the single-bot wiring
+   behind `Agent`, seeded by the existing settings as the default/family agent.
+   **Zero behavior change** with one agent. (The safe, mergeable first step.)
+2. **Provisioning + access control + launcher switcher** *(shipped)* — make
+   personal agents a config/ops step.
+3. **Polish (open)** — a small admin UI for the registry; revisit the term-llm
    "one serve, many agents" optimization only if container count ever bites.
 
 ## Open / deferred

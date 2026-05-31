@@ -158,8 +158,12 @@ auto-fixed:
   (`app/jobs/regular/second_brain_reply.rb`). Partly mitigated by the broadened
   connection-error rescues; the blanket case interacts with `claim_turn!`
   (a second attempt no-ops) so resolving the placeholder safely is a design call.
-- **No automated tests yet** — the standing #1 gap. A reply-flow + ask_user spec
-  harness would let several of the above land safely.
+- **No reply-flow / ask_user spec harness yet.** Request + agent specs now exist
+  (`spec/lib/second_brain/agent_spec.rb`,
+  `spec/requests/second_brain/{chats,widgets}_controller_spec.rb` — 23 examples),
+  covering agent access/privacy + the widget proxy, but NOT the streaming reply →
+  ask_user → resume path. A spec harness for that flow would let several of the
+  above (e.g. the `pre_tools` fix) land safely.
 
 These came from a multi-agent review (45 findings → 33 real → 19 low-hanging,
 all of which are fixed as of commit `7eceff3`).
