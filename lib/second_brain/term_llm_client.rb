@@ -88,7 +88,8 @@ module ::SecondBrain
       request["Accept"] = "text/event-stream"
       auth(request)
 
-      run_sse(uri, request, &block)
+      # Seed the result with the reconnected id — the continuation won't re-emit it.
+      run_sse(uri, request, response_id: response_id, &block)
     end
 
     # Answer (or cancel) a pending ask_user prompt, unblocking the paused run.
@@ -138,14 +139,20 @@ module ::SecondBrain
     # Consume an SSE stream (POST /v1/responses or GET …/events). Yields
     # (text, tools) as the answer/tools accumulate; returns the final hash. We
     # disconnect (throw) on an ask_user prompt or on [DONE].
-    def run_sse(uri, request)
+    #
+    # `response_id` seeds the result: stream_respond leaves it nil (the run's
+    # `response.created` event fills it in); stream_events passes the id it
+    # reconnected to, because a reconnect's continuation does NOT re-emit
+    # `response.created`. Without this seed the resumed result carries a blank
+    # response_id, and the NEXT ask_user round loses the run — resume! bails on a
+    # blank response_id and the post hangs forever.
+    def run_sse(uri, request, response_id: nil)
       http = build_http(uri, read_timeout: 600)
 
       text = +""
       tools = []
       buffer = +""
       ask_user = nil
-      response_id = nil
       last_seq = 0
 
       begin
