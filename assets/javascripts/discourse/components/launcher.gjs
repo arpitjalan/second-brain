@@ -39,6 +39,27 @@ const STARTER_CHIPS = [
   },
 ];
 
+// Remember which agent a member last chose, so the launcher reopens on it.
+// Keyed per user because localStorage is per-browser (a family might share one);
+// wrapped in try/catch since storage can be unavailable (e.g. private mode).
+const AGENT_STORE_PREFIX = "second_brain:selected-agent:";
+
+function readStoredAgent(userId) {
+  try {
+    return window.localStorage?.getItem(`${AGENT_STORE_PREFIX}${userId}`);
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredAgent(userId, username) {
+  try {
+    window.localStorage?.setItem(`${AGENT_STORE_PREFIX}${userId}`, username);
+  } catch {
+    // remembering the choice is a nicety, not essential — ignore storage errors
+  }
+}
+
 // The homepage. Type a message and go — the plugin creates the private chat
 // (a PM with the bot, auto-titled) and navigates into Discourse's message view,
 // where the bot replies. No title/recipient friction.
@@ -142,16 +163,29 @@ export default class Launcher extends Component {
     try {
       const data = await ajax("/second-brain/agents");
       this.agents = data.agents || [];
-      const owned = this.agents.find((a) => a.owned);
-      this.selectedAgent = owned?.username || this.agents[0]?.username || null;
+      this.selectedAgent = this.pickDefaultAgent();
     } catch {
       this.agents = [];
     }
   }
 
+  // The agent to open on: the member's last explicit choice if it's still
+  // available, else their personal agent, else the family agent.
+  pickDefaultAgent() {
+    const stored = readStoredAgent(this.currentUser.id);
+    if (stored && this.agents.some((a) => a.username === stored)) {
+      return stored;
+    }
+    const owned = this.agents.find((a) => a.owned);
+    return owned?.username || this.agents[0]?.username || null;
+  }
+
   @action
   selectAgent(username) {
     this.selectedAgent = username;
+    if (this.currentUser) {
+      writeStoredAgent(this.currentUser.id, username);
+    }
   }
 
   @action
