@@ -154,6 +154,15 @@ It also runs `db:migrate` + `rake second_brain:setup` and recommends a
 personal agent = run the script with `--owner <username>`; **no plugin code
 change.**
 
+**On a live server** (no local docker), the Discourse half is done by rake tasks
+in `lib/tasks/second_brain.rake` — `second_brain:add_agent` (ENV: `SB_BOT`,
+`SB_OWNER`, `SB_URL`, `SB_TOKEN`, optional `SB_MODEL`/`SB_NEW_KEY`),
+`second_brain:list_agents`, `second_brain:remove_agent`. `add_agent` does steps
+2–3 above (TL4 bot user, user-scoped API key it prints once, registry row) and
+leaves the term-llm `serve` + its `DISCOURSE_API_KEY` env to the operator. The
+registry row is live immediately (no restart). An admin UI for this is the open
+Phase-3 polish.
+
 ## Change surface (sized from the code)
 
 Phase-1 refactor (behavior-neutral, one agent == today) — **shipped:**

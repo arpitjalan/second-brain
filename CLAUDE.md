@@ -49,9 +49,10 @@ troubleshooting: `docs/local-dev.md`.
 - `term-llm/` — the **bot side**: the `discourse` skill the bot uses to act on the
   forum, plus its own README (remote/droplet deploy).
 - `config/`, `db/`, `lib/tasks/` — settings; the `second_brain_agents` schema
-  migration; `rake second_brain:setup` (idempotent calm-layout seeding —
-  settings, not schema, so a rake task rather than a migration); and
-  `rake second_brain:lockdown` (login-required + invite-only + no search indexing).
+  migration; and the `second_brain.rake` tasks: `setup` (calm-layout seeding),
+  `lockdown` (private posture), and the prod personal-agent provisioning
+  (`add_agent`/`list_agents`/`remove_agent` — the live-server path that
+  `setup-local-dev.sh --owner` covers in local dev).
 
 ## Conventions
 

@@ -144,6 +144,30 @@ bin/rake second_brain:lockdown   # login_required + invite_only + no search inde
 (run it knowingly) — it prints the before → after for each setting and is easy to
 revert. Without it the forum is publicly reachable and search-indexed.
 
+### Personal agents on a live server
+
+`setup-local-dev.sh --owner` is dev-only (it spins up a local docker container).
+On a **live server** the term-llm agent runs wherever you host it; you register it
+with three rake tasks (admin-run; secrets via env vars so they don't hit your
+shell history awkwardly):
+
+```bash
+cd ~/discourse
+# register/update a personal agent for a member (idempotent):
+SB_BOT=jarvis SB_OWNER=arpit SB_URL=https://jarvis.example.com/chat SB_TOKEN=<web-token> \
+  bin/rake second_brain:add_agent            # optional: SB_MODEL=gpt-5.5  SB_NEW_KEY=1
+
+bin/rake second_brain:list_agents            # show all agents (tokens masked)
+SB_BOT=jarvis SB_DEACTIVATE=1 bin/rake second_brain:remove_agent
+```
+
+`add_agent` creates the bot user (TL4, non-admin), mints + **prints once** a
+Discourse API key, and writes the registry row. The two secrets flow opposite
+ways: the agent's term-llm token goes **into** the registry (so Discourse can chat
+it); the printed `DISCOURSE_API_KEY` goes **onto the term-llm host** (so the agent
+can post to the forum). The agent is live immediately — no restart. Multiple agents
+per owner are supported.
+
 ## Documentation
 
 | Doc | What |
