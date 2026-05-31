@@ -50,7 +50,18 @@ module ::SecondBrain
       target = +"#{base_url}/widgets/#{path}"
       target << "?#{request.query_string}" if request.query_string.present?
 
-      upstream = fetch_following_redirects(URI.parse(target), agent)
+      upstream, final_uri = fetch_following_redirects(URI.parse(target), agent)
+
+      # term-llm normalizes a widget directory to a trailing slash (`/widgets/jobs`
+      # -> `/widgets/jobs/`). A widget's data calls are RELATIVE (`fetch('api/jobs')`),
+      # so they only resolve when the page URL ends in "/". If term-llm landed on a
+      # directory but the browser asked without the slash, bounce it to the slash
+      # form — so a widget URL works with OR without a trailing slash.
+      if final_uri.path.end_with?("/") && !request.path.end_with?("/")
+        dest = +"#{request.path}/"
+        dest << "?#{request.query_string}" if request.query_string.present?
+        return redirect_to(dest)
+      end
 
       content_type = upstream["content-type"].presence || "application/octet-stream"
       body = upstream.body.to_s
@@ -107,7 +118,7 @@ module ::SecondBrain
       # Short timeouts: the status JSON is quick, and #index fans out across every
       # accessible agent on the request thread — one slow/down agent mustn't stall
       # the whole sidebar.
-      upstream =
+      upstream, =
         fetch_following_redirects(
           URI.parse("#{base_url}/admin/widgets/status"),
           agent,
@@ -156,7 +167,7 @@ module ::SecondBrain
         response = http.request(request)
 
         unless response.is_a?(Net::HTTPRedirection) && response["location"].present?
-          return response
+          return [response, uri]
         end
 
         uri = URI.join(uri.to_s, response["location"])

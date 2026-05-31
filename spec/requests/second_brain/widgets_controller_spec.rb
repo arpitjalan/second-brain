@@ -59,6 +59,24 @@ describe SecondBrain::WidgetsController do
       expect(response.body).to include('src="relative/pic.png"')
     end
 
+    it "redirects a no-slash directory widget to the trailing-slash form" do
+      # term-llm 301s a widget directory to its trailing-slash form; the proxy
+      # should propagate that to the browser so relative fetches resolve.
+      stub_request(:get, "http://personal.test/chat/widgets/board").to_return(
+        status: 301,
+        headers: { "Location" => "http://personal.test/chat/widgets/board/" },
+      )
+      stub_request(:get, "http://personal.test/chat/widgets/board/").to_return(
+        status: 200,
+        body: "<html>board</html>",
+        headers: { "Content-Type" => "text/html" },
+      )
+
+      sign_in(owner)
+      get "/second-brain/agent-widgets/stan_arpit/board" # no trailing slash
+      expect(response).to redirect_to("/second-brain/agent-widgets/stan_arpit/board/")
+    end
+
     it "forbids a non-owner from loading someone else's personal widget" do
       sign_in(other)
       get "/second-brain/agent-widgets/stan_arpit/chore/"
