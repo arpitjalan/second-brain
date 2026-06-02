@@ -223,8 +223,21 @@ echo "skill installed."
 # NB: /usr/local/bin is in the image layer, so it survives `term-llm contain restart`
 # but NOT `rebuild`/`rm` — re-run this script after either (it's idempotent).
 say "Installing the dv wrapper on the container PATH (/usr/local/bin/dv -> ssh $ALIAS -- dv)"
-printf '#!/usr/bin/env bash\n# second-brain: forward dv to the remote dev box over the guard-locked %s key.\nexport HOME=%s\nexec ssh -o StrictHostKeyChecking=accept-new %s -- dv "$@"\n' "$ALIAS" "$AGENT_HOME" "$ALIAS" \
+WRAPPER_SRC="$PLUGIN_DIR/term-llm/dv-wrapper.sh"
+WRAPPER_TMP=""
+if [ ! -f "$WRAPPER_SRC" ]; then
+  WRAPPER_TMP="$(mktemp)"
+  if [ -n "${GITHUB_TOKEN:-}" ]; then
+    curl -fsSL -H "Authorization: token $GITHUB_TOKEN" "$RAW_BASE/term-llm/dv-wrapper.sh" -o "$WRAPPER_TMP"
+  else
+    curl -fsSL "$RAW_BASE/term-llm/dv-wrapper.sh" -o "$WRAPPER_TMP"
+  fi || { rm -f "$WRAPPER_TMP"; die "Couldn't fetch dv-wrapper.sh from GitHub (see the GITHUB_TOKEN note above)."; }
+  WRAPPER_SRC="$WRAPPER_TMP"
+fi
+# Substitute the alias/home placeholders, then drop it in as the agent's `dv`.
+sed -e "s|@HOME@|$AGENT_HOME|g" -e "s|@ALIAS@|$ALIAS|g" "$WRAPPER_SRC" \
   | sssh "$SERVER_TARGET" "docker exec -i -u root $CONTAINER sh -c 'cat > /usr/local/bin/dv && chmod 755 /usr/local/bin/dv'"
+[ -n "$WRAPPER_TMP" ] && rm -f "$WRAPPER_TMP"
 if dexec "command -v dv" >/dev/null 2>&1; then
   echo "wrapper installed and 'dv' is on the agent's PATH."
 else

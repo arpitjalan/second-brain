@@ -48,8 +48,10 @@ troubleshooting: `docs/local-dev.md`.
   `/second-brain/widgets/*path` kept for family).
 - `term-llm/` — the **bot side**: the `discourse` skill (act on the forum) and the
   `dv` skill (drive remote Discourse dev containers) the bot uses, the `dv`-only SSH
-  forced-command guard (`dv-ssh-guard.py`), and its own README (remote/droplet
-  deploy). Three one-command setup scripts wire the bot to a `dv` dev box; all leave
+  forced-command guard (`dv-ssh-guard.py`), the in-container `dv` wrapper
+  (`dv-wrapper.sh`, installed as the agent's `dv`) that forwards a bare `dv …` to the
+  guard-locked dev box so the model's natural invocation works, and its own README
+  (remote/droplet deploy). Three one-command setup scripts wire the bot to a `dv` dev box; all leave
   the bot holding only the `dv`-only key. Pick by topology: `scripts/setup-dv.sh`
   (run on the term-llm server, when it can reach the dev box) and
   `scripts/setup-dv-from-devbox.sh` (run on the dev box, when term-llm is on a hosted
