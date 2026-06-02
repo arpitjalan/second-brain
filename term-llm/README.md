@@ -57,59 +57,96 @@ reaches it over an SSH key **locked to `dv` and nothing else**:
      your forum host                       your laptop / a dev box
 ```
 
-**Setup is two machines, ~5 minutes:** make a key on the server, run one
-installer command on the dev machine, paste back the config it prints. The
-transport between them is your choice — LAN, VPN, jump host, or
-[Tailscale](https://tailscale.com) (recommended; see "Networking" below).
+**Setup is one command, run on the term-llm server.** `scripts/setup-dv.sh` does
+the whole two-machine dance for you — installs the skill, mints the locked key,
+installs the guard on the dev box *over your own SSH login*, writes the `dvhost`
+alias with the right address, and verifies both that `dv` works and that the guard
+refuses everything else. The transport between the two machines is your choice —
+LAN, VPN, jump host, or [Tailscale](https://tailscale.com) (recommended; see
+"Networking" below).
 
-### Deploy
+### Prerequisite (on the dev machine)
 
-1. **Install the skill** into the bot's skills directory (on the term-llm
-   server):
+**Docker must already be installed and running**, then install `dv`:
+
+```bash
+# 1. Docker — dv DRIVES Docker but does NOT install it. Use your OS's Docker
+#    install and make sure `docker info` works for your user.
+# 2. dv — its installer just drops the dv binary into ~/.local/bin (no sudo):
+curl -sSfL https://raw.githubusercontent.com/discourse/dv/main/install.sh | sh
+```
+
+### Setup (one command, on the term-llm server)
+
+You need your normal (admin) SSH login to the dev box. The script uses it **once,
+at setup time**, to install the locked key; the bot itself only ever holds the
+`dv`-only key.
+
+```bash
+scripts/setup-dv.sh me@devbox          # me@devbox = how THIS server reaches the dev box
+# or, if devbox is already a Host in your ~/.ssh/config:  scripts/setup-dv.sh devbox
+```
+
+That one command (idempotent — safe to re-run):
+
+1. installs the dv skill into `~/.config/term-llm/skills/dv/`;
+2. mints the `dv`-only key `~/.ssh/dvhost_ed25519` (reused unless `--new-key`);
+3. `scp`s `dv-ssh-guard.py` to the dev box and runs its self-installer there, so the
+   bot's **public** key rides over as an argument — never copy/pasted by hand. The
+   key can run any `dv` command (including commands *inside* dv's disposable
+   containers — the sandbox) but **nothing else**: no shell, no `git`/`gh`, no
+   `scp`. So the bot can build/test/`extract` but **can't push or open a PR** —
+   that's left to you;
+4. writes the `Host dvhost` block into `~/.ssh/config` with **`HostName` = the
+   address you just reached the dev box at** — correct by construction, even behind
+   Tailscale/NAT, with no hand-edit and no config block to paste back; and
+5. verifies the key works **and** that a non-`dv` command is refused — proving the
+   guard is actually guarding.
+
+Handy flags: `--host-name ADDR` (bake a different reach address than you SSH'd in
+over — e.g. a stable Tailscale name), `--alias NAME` (a second dev box / key),
+`--port N`, `--new-key`. Private repo? `export GITHUB_TOKEN=<PAT>` so the script can
+fetch the skill/guard from GitHub when there's no local checkout on the server.
+
+> ⚠️ **The dev machine must be awake and online** for any of this to work — a
+> sleeping laptop = the job fails. Best for *attended* use ("I'm around, go test
+> this PR"), not unattended 3am jobs.
+
+<details>
+<summary><strong>Doing it by hand</strong> — if the server has no admin SSH to the dev box, or you'd rather not script it</summary>
+
+1. **Install the skill** on the term-llm server:
    ```bash
    mkdir -p ~/.config/term-llm/skills/dv
    curl -fsSL https://raw.githubusercontent.com/arpitjalan/second-brain/main/term-llm/skills/dv/SKILL.md \
      -o ~/.config/term-llm/skills/dv/SKILL.md
    # …or from a checkout:  cp term-llm/skills/dv/SKILL.md ~/.config/term-llm/skills/dv/SKILL.md
-   term-llm skills validate dv   # optional
    ```
-   (While the repo is private, add `-H "Authorization: token <PAT>"` to the curl,
-   or `scp` the file over.)
+   (Private repo? add `-H "Authorization: token <PAT>"` — without it `-fsSL` fails
+   silently and leaves an empty file.)
 
-2. **Generate the bot's SSH key** (on the term-llm server):
+2. **Generate the bot's key** on the server:
    ```bash
-   ssh-keygen -t ed25519 -f ~/.ssh/stan_dv_ed25519 -N "" -C stan-dv
-   cat ~/.ssh/stan_dv_ed25519.pub   # copy this public key for step 3
+   ssh-keygen -t ed25519 -f ~/.ssh/dvhost_ed25519 -N "" -C dvhost-dv
+   cat ~/.ssh/dvhost_ed25519.pub        # copy this public key for step 3
    ```
 
-3. **On the dev machine:** install `dv` + Docker, then run the self-installing
-   `dv`-only guard with the public key from step 2 — one command, no hand-editing
-   of `authorized_keys`:
+3. **On the dev machine** (Docker + `dv` already installed — see Prerequisite),
+   run the self-installing guard with that public key:
    ```bash
-   curl -sSfL https://raw.githubusercontent.com/discourse/dv/main/install.sh | sh   # dv + Docker
    curl -fsSL https://raw.githubusercontent.com/arpitjalan/second-brain/main/term-llm/dv-ssh-guard.py -o dv-ssh-guard.py
-   python3 dv-ssh-guard.py --install "ssh-ed25519 AAAA…botkey stan-dv"
+   python3 dv-ssh-guard.py --install "ssh-ed25519 AAAA…botkey dvhost-dv"
    ```
-   The installer copies the guard to `~/.local/bin`, adds a
-   `restrict,command="…"` entry locked to it, and **prints the exact
-   `~/.ssh/config` block** for step 4. The key can run any `dv` command
-   (including commands *inside* dv's disposable containers — the sandbox) but
-   **nothing else** on the host: no shell, no `git`/`gh`, no `scp`. So the bot
-   can build/test/`extract`, but **can't push or open a PR** — that's left to you.
+   It adds the locked `restrict,command="…"` entry and **prints the `~/.ssh/config`
+   block** for step 4 (auto-detecting a Tailscale `HostName` when present).
 
-4. **On the term-llm server:** paste the `Host dvhost` block the installer
-   printed into `~/.ssh/config` (set `HostName` to the dev machine's reachable
-   address), then verify:
+4. **On the term-llm server:** paste that block into `~/.ssh/config` (fill in
+   `HostName` if it printed a placeholder), then verify:
    ```bash
    ssh dvhost -- dv version   # reachable + dv present
    ssh dvhost -- dv list      # the Docker daemon on the dev machine is up
    ```
-   The skill runs these same checks and tells the member if the machine is
-   offline.
-
-> ⚠️ **The dev machine must be awake and online** for any of this to work — a
-> sleeping laptop = the job fails. Best for *attended* use ("I'm around, go test
-> this PR"), not unattended 3am jobs.
+</details>
 
 #### Networking — Tailscale recommended (not required)
 
