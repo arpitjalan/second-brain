@@ -214,6 +214,24 @@ dexec "grep -q '^name: dv' $AGENT_HOME/.config/term-llm/skills/dv/SKILL.md" \
   || die "the dv SKILL.md in the container looks wrong (no 'name: dv'); aborting."
 echo "skill installed."
 
+# --- 3b. install a `dv` wrapper on the container PATH -------------------------
+# The bot's model tends to run `dv …` directly in its shell rather than the explicit
+# `ssh dvhost -- dv …` the skill teaches — and a bare `dv` isn't installed in the
+# container, so it fails. Install a thin wrapper at /usr/local/bin/dv that forwards
+# to the guard-locked dvhost, so the natural `dv …` invocation just works with no
+# reliance on the model activating the skill. The guard still limits it to dv-only.
+# NB: /usr/local/bin is in the image layer, so it survives `term-llm contain restart`
+# but NOT `rebuild`/`rm` — re-run this script after either (it's idempotent).
+say "Installing the dv wrapper on the container PATH (/usr/local/bin/dv -> ssh $ALIAS -- dv)"
+printf '#!/usr/bin/env bash\n# second-brain: forward dv to the remote dev box over the guard-locked %s key.\nexport HOME=%s\nexec ssh -o StrictHostKeyChecking=accept-new %s -- dv "$@"\n' "$ALIAS" "$AGENT_HOME" "$ALIAS" \
+  | sssh "$SERVER_TARGET" "docker exec -i -u root $CONTAINER sh -c 'cat > /usr/local/bin/dv && chmod 755 /usr/local/bin/dv'"
+if dexec "command -v dv" >/dev/null 2>&1; then
+  echo "wrapper installed and 'dv' is on the agent's PATH."
+else
+  warn "wrapper written to /usr/local/bin/dv but 'dv' isn't resolving on the agent's PATH —
+      check the container's PATH (the model needs a bare 'dv' to work)."
+fi
+
 # --- 4. generate the dv-only key INSIDE the container -------------------------
 say "Generating the dv-only key inside the container ($AGENT_HOME/.ssh/$KEY_NAME)"
 [ "$NEW_KEY" = true ] && dexec "rm -f $AGENT_HOME/.ssh/$KEY_NAME $AGENT_HOME/.ssh/$KEY_NAME.pub"
@@ -314,6 +332,14 @@ else
   warn "dv list failed — Docker on this box may be down. The link is set up; start Docker here."
 fi
 
+# Confirm the bare `dv` wrapper (what the model actually types) resolves and works.
+if dexec "dv version" 2>/dev/null | grep -qi '^dv version'; then
+  echo "  wrapper: bare 'dv version' works (the model's natural invocation)"
+else
+  warn "the bare 'dv' wrapper didn't return a version — the model's 'dv …' calls may fail
+      even though 'ssh $ALIAS -- dv' works. Check /usr/local/bin/dv in the container."
+fi
+
 # --- 9. restart the agent so term-llm serve rescans skills --------------------
 if [ "$NO_RESTART" = true ]; then
   warn "skipping restart (--no-restart). Run 'term-llm contain restart $AGENT' on the server
@@ -329,7 +355,7 @@ fi
 
 # --- 10. summary --------------------------------------------------------------
 printf '\n\033[1;32m== %s now has dv ==\033[0m\n' "$AGENT"
-echo "  the agent (in $CONTAINER) runs everything as: ssh $ALIAS -- dv ..."
+echo "  the agent runs a bare 'dv …' in $CONTAINER (wrapper -> ssh $ALIAS -- dv …)"
 echo "  reaches this box at:  $REACH_NAME${REACH_PORT:+ (port $REACH_PORT)}, user $DEVBOX_USER"
 echo "  dv-only key:          $AGENT_HOME/.ssh/$KEY_NAME inside the container (private half stays there)"
 echo "  other agents are unaffected — dv is scoped to '$AGENT' only."

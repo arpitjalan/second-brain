@@ -165,7 +165,8 @@ box**, which provisions **one named agent's** container volume:
 scripts/setup-dv-for-agent.sh jarvis me@droplet   # agent name + your login to the server
 ```
 
-It (idempotent): installs the skill into `jarvis`'s container volume; generates the
+It (idempotent): installs the skill into `jarvis`'s container volume; installs a thin
+`dv` wrapper at `/usr/local/bin/dv` inside the container (see below); generates the
 dv-only key **inside that container**; locks this box's `authorized_keys` to it via
 the guard; writes the `Host dvhost` block into the agent's in-container `~/.ssh/config`
 (`HostName` = this box's Tailscale IP, auto-detected — robust from inside Docker,
@@ -174,6 +175,15 @@ container** that `dv` works and a non-`dv` command is refused; then
 `term-llm contain restart jarvis` so serve rescans skills. Flags: `--container NAME`,
 `--reach-name ADDR`, `--agent-user`/`--agent-home`, `--port`/`--reach-port`,
 `--new-key`, `--no-restart`.
+
+**Why the wrapper:** the bot's model tends to run `dv ls` *directly in its own
+container shell* (where there's no `dv`) instead of the explicit `ssh dvhost -- dv ls`
+the skill teaches — so it just reports "`dv`: command not found" and never reaches the
+dev box. The wrapper makes a bare `dv …` transparently forward to the guard-locked
+`dvhost`, so the model's natural invocation works without depending on it activating
+the skill. The guard still constrains it to `dv`-only, so there's no privilege change.
+(It lives in the image layer, so it survives `term-llm contain restart` but not a
+`rebuild`/`rm` — just re-run the script after either; it's idempotent.)
 
 **dv is per-agent here** — only the agent(s) you run this for get it. Give it to the
 one dev-facing bot, not all of them (least privilege: each container holding the key
