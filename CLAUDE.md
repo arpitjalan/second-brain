@@ -49,8 +49,11 @@ troubleshooting: `docs/local-dev.md`.
 - `term-llm/` — the **bot side**: the `discourse` skill (act on the forum) and the
   `dv` skill (drive remote Discourse dev containers) the bot uses, the `dv`-only SSH
   forced-command guard (`dv-ssh-guard.py`), and its own README (remote/droplet
-  deploy). `scripts/setup-dv.sh` wires the bot to a `dv` dev box in one command (run
-  on the term-llm server; uses your admin SSH to the dev box only at setup time).
+  deploy). Two one-command setup scripts wire the bot to a `dv` dev box, depending on
+  which side can SSH the other: `scripts/setup-dv.sh` (run on the term-llm server,
+  when it can reach the dev box) and `scripts/setup-dv-from-devbox.sh` (run on the
+  dev box, when term-llm is on a hosted droplet that can't — the common case). Both
+  leave the bot holding only the `dv`-only key.
 - `config/`, `db/`, `lib/tasks/` — settings; the `second_brain_agents` schema
   migration; and the `second_brain.rake` tasks: `setup` (calm-layout seeding),
   `lockdown` (private posture), and the prod personal-agent provisioning
