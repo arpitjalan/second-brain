@@ -58,12 +58,14 @@ reaches it over an SSH key **locked to `dv` and nothing else**:
 ```
 
 **Setup is one command** — run from whichever of the two machines can SSH into the
-other. Two entry points, identical end result: `scripts/setup-dv.sh` (on the
-term-llm server, when it can reach the dev box) and `scripts/setup-dv-from-devbox.sh`
-(on the dev box, when term-llm is on a hosted server that can't — the common case).
-Either installs the skill, sets up the `dv`-only key, writes the `dvhost` alias with
-the right address, and verifies the guard. The transport between the two machines is
-your choice — LAN, VPN, jump host, or [Tailscale](https://tailscale.com)
+other. Three entry points, identical end result: `scripts/setup-dv.sh` (on the
+term-llm server, when it can reach the dev box), `scripts/setup-dv-from-devbox.sh`
+(on the dev box, when term-llm is on a hosted server that can't — the common case),
+and `scripts/setup-dv-for-agent.sh` (on the dev box, when term-llm runs as **per-agent
+containers** — `term-llm contain` — so dv is scoped to one named agent's container
+volume). Each installs the skill, sets up the `dv`-only key, writes the `dvhost`
+alias with the right address, and verifies the guard. The transport between the two
+machines is your choice — LAN, VPN, jump host, or [Tailscale](https://tailscale.com)
 (recommended; see "Networking" below).
 
 ### Prerequisite (on the dev machine)
@@ -125,12 +127,57 @@ recommended (both machines on the tailnet; `--reach-name` then defaults to this
 box's MagicDNS name). The server reaches the dev box at runtime regardless, so this
 path is required either way.
 
+On **Linux** sshd usually isn't running yet — start it, but expose it *only* over
+the tailnet, never the whole LAN/internet (the `dv` guard then locks what the key
+can do — defense in depth). Bind sshd to this box's Tailscale IPs and keep auth
+key-only by dropping a `/etc/ssh/sshd_config.d/10-tailscale-only.conf` (use your own
+addresses from `tailscale ip`):
+
+```conf
+ListenAddress 100.x.y.z                       # your tailnet IPv4
+ListenAddress fd7a:…                          # …and IPv6, if you use it
+PasswordAuthentication no
+```
+
+then `sudo ssh-keygen -A` (first-run host keys, else `sshd -t` errors with "no
+hostkeys available") and `sudo systemctl enable --now sshd`. Confirm it bound to the
+tailnet and **not** `0.0.0.0`: `ss -tlnH 'sport = :22'`.
+
 Private repo? `export GITHUB_TOKEN=<PAT>` so either script can fetch the skill/guard
 from GitHub when there's no local checkout.
 
 > ⚠️ **The dev machine must be awake and online** for any of this to work — a
 > sleeping laptop = the job fails. Best for *attended* use ("I'm around, go test
 > this PR"), not unattended 3am jobs.
+
+#### When term-llm runs as per-agent containers (`term-llm contain`)
+
+The two scripts above assume `term-llm serve` is a **host process** and install the
+skill + dv-only key into the **SSH-login user's home** (`~/.config/term-llm/skills`,
+`~/.ssh`). But a containerised deployment runs each agent in its own container
+(`term-llm-contain-<agent>-app-1`) with its own `/home/agent` **volume**, and the
+agent reads skills + ssh config from *there* — it never looks at the login user's
+home. So `setup-dv.sh` / `setup-dv-from-devbox.sh` would report a green ✅ while
+granting **no agent** dv. Use the container-aware script instead, run **on the dev
+box**, which provisions **one named agent's** container volume:
+
+```bash
+scripts/setup-dv-for-agent.sh jarvis me@droplet   # agent name + your login to the server
+```
+
+It (idempotent): installs the skill into `jarvis`'s container volume; generates the
+dv-only key **inside that container**; locks this box's `authorized_keys` to it via
+the guard; writes the `Host dvhost` block into the agent's in-container `~/.ssh/config`
+(`HostName` = this box's Tailscale IP, auto-detected — robust from inside Docker,
+which NATs the container out through the host's tailnet); verifies **from inside the
+container** that `dv` works and a non-`dv` command is refused; then
+`term-llm contain restart jarvis` so serve rescans skills. Flags: `--container NAME`,
+`--reach-name ADDR`, `--agent-user`/`--agent-home`, `--port`/`--reach-port`,
+`--new-key`, `--no-restart`.
+
+**dv is per-agent here** — only the agent(s) you run this for get it. Give it to the
+one dev-facing bot, not all of them (least privilege: each container holding the key
+can drive Docker on your dev box). Repeat for another agent if you really want it.
 
 <details>
 <summary><strong>Doing it by hand</strong> — the fully manual steps, if you'd rather not run a script</summary>

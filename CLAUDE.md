@@ -49,11 +49,16 @@ troubleshooting: `docs/local-dev.md`.
 - `term-llm/` — the **bot side**: the `discourse` skill (act on the forum) and the
   `dv` skill (drive remote Discourse dev containers) the bot uses, the `dv`-only SSH
   forced-command guard (`dv-ssh-guard.py`), and its own README (remote/droplet
-  deploy). Two one-command setup scripts wire the bot to a `dv` dev box, depending on
-  which side can SSH the other: `scripts/setup-dv.sh` (run on the term-llm server,
-  when it can reach the dev box) and `scripts/setup-dv-from-devbox.sh` (run on the
-  dev box, when term-llm is on a hosted droplet that can't — the common case). Both
-  leave the bot holding only the `dv`-only key.
+  deploy). Three one-command setup scripts wire the bot to a `dv` dev box; all leave
+  the bot holding only the `dv`-only key. Pick by topology: `scripts/setup-dv.sh`
+  (run on the term-llm server, when it can reach the dev box) and
+  `scripts/setup-dv-from-devbox.sh` (run on the dev box, when term-llm is on a hosted
+  droplet that can't — the common case) both assume `term-llm serve` is a **host
+  process** and install into the SSH-login user's home. When term-llm instead runs as
+  **per-agent containers** (`term-llm-contain-<agent>-app-1`, each with its own
+  `/home/agent` volume — the live-server shape), those two would silently grant no
+  agent dv; use `scripts/setup-dv-for-agent.sh <agent> <server>` (run on the dev box),
+  which installs into one named agent's container volume so dv is scoped per-agent.
 - `config/`, `db/`, `lib/tasks/` — settings; the `second_brain_agents` schema
   migration; and the `second_brain.rake` tasks: `setup` (calm-layout seeding),
   `lockdown` (private posture), and the prod personal-agent provisioning
