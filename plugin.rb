@@ -73,6 +73,8 @@ after_initialize do
   Discourse::Application.routes.append do
     # Homepage board: the member's recent chats + what the family shared.
     get "/second-brain/home" => "second_brain/chats#home"
+    # Search the member's own bot chats (+ shared public chats).
+    get "/second-brain/search" => "second_brain/chats#search"
     # The agents this member may chat with (family + their own) — for the switcher.
     get "/second-brain/agents" => "second_brain/chats#agents"
     # Start a chat from a single message (frictionless homepage box).

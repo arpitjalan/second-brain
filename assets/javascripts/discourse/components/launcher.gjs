@@ -4,7 +4,7 @@ import { fn } from "@ember/helper";
 import { on } from "@ember/modifier";
 import { action } from "@ember/object";
 import didInsert from "@ember/render-modifiers/modifiers/did-insert";
-import { next } from "@ember/runloop";
+import { debounce, next } from "@ember/runloop";
 import { service } from "@ember/service";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
@@ -76,6 +76,10 @@ export default class Launcher extends Component {
   @tracked attachments = [];
   @tracked agents = [];
   @tracked selectedAgent = null;
+  @tracked searchQuery = "";
+  @tracked searchResults = [];
+  @tracked searchPending = false;
+  @tracked searchDone = false;
   inputEl = null;
 
   get botUsername() {
@@ -128,6 +132,11 @@ export default class Launcher extends Component {
     return this.recent.length > 0 || this.interesting.length > 0;
   }
 
+  // While there's a real query (>=2 chars) the board area becomes search results.
+  get isSearching() {
+    return this.searchQuery.trim().length >= 2;
+  }
+
   // First-run nudge: loaded fine, signed in, but nothing to show yet.
   get showEmptyState() {
     return this.boardLoaded && !this.boardError && !this.hasBoard;
@@ -149,6 +158,34 @@ export default class Launcher extends Component {
       this.boardError = true;
     } finally {
       this.boardLoaded = true;
+    }
+  }
+
+  @action
+  updateSearch(event) {
+    this.searchQuery = event.target.value;
+    debounce(this, this.runSearch, 250);
+  }
+
+  // Search the member's own bot chats (+ shared public chats), server-scoped so
+  // it can't surface anyone else's private chats. <2 chars clears back to the board.
+  @action
+  async runSearch() {
+    const q = this.searchQuery.trim();
+    if (q.length < 2) {
+      this.searchResults = [];
+      this.searchDone = false;
+      return;
+    }
+    this.searchPending = true;
+    try {
+      const data = await ajax("/second-brain/search", { data: { q } });
+      this.searchResults = data.results || [];
+    } catch {
+      this.searchResults = [];
+    } finally {
+      this.searchPending = false;
+      this.searchDone = true;
     }
   }
 
@@ -367,50 +404,86 @@ export default class Launcher extends Component {
           {{/each}}
         </div>
 
-        {{#if this.boardError}}
-          <p class="sb-board__note">
-            Couldn't load your chats — refresh to retry.
-          </p>
-        {{else if this.showEmptyState}}
-          <p class="sb-board__note">
-            Your chats will show up here once you start one.
-          </p>
-        {{/if}}
+        <div class="sb-search">
+          <input
+            type="search"
+            class="sb-search__input"
+            placeholder="Search your chats…"
+            aria-label="Search your chats"
+            value={{this.searchQuery}}
+            {{on "input" this.updateSearch}}
+          />
+        </div>
 
-        {{#if this.hasBoard}}
-          <div class="sb-board">
-            <div class="sb-board__col">
-              <h2 class="sb-board__heading">Your recent chats</h2>
-              {{#if this.recent.length}}
-                {{#each this.recent as |card|}}
+        {{#if this.isSearching}}
+          {{#if this.searchResults.length}}
+            <div class="sb-board sb-board--search">
+              <div class="sb-board__col sb-board__col--full">
+                <h2 class="sb-board__heading">Results</h2>
+                {{#each this.searchResults as |card|}}
                   <a class="sb-board__card" href={{card.url}}>
                     <span class="sb-board__title">{{card.title}}</span>
-                    <span class="sb-board__meta">{{card.age}}</span>
-                  </a>
-                {{/each}}
-              {{else}}
-                <div class="sb-board__empty">
-                  <span class="sb-board__empty-title">No chats yet</span>
-                  <span class="sb-board__empty-text">
-                    Start one above and it'll show up here.
-                  </span>
-                </div>
-              {{/if}}
-            </div>
-            {{#if this.interesting.length}}
-              <div class="sb-board__col">
-                <h2 class="sb-board__heading">Interesting topics</h2>
-                {{#each this.interesting as |card|}}
-                  <a class="sb-board__card" href={{card.url}}>
-                    <span class="sb-board__title">{{card.title}}</span>
+                    {{#if card.blurb}}
+                      <span class="sb-board__blurb">{{card.blurb}}</span>
+                    {{/if}}
                     <span class="sb-board__meta">{{card.username}}
                       ·
                       {{card.age}}</span>
                   </a>
                 {{/each}}
               </div>
-            {{/if}}
-          </div>
+            </div>
+          {{else if this.searchDone}}
+            <p class="sb-board__note">
+              No chats match “{{this.searchQuery}}”.
+            </p>
+          {{/if}}
+        {{else}}
+          {{#if this.boardError}}
+            <p class="sb-board__note">
+              Couldn't load your chats — refresh to retry.
+            </p>
+          {{else if this.showEmptyState}}
+            <p class="sb-board__note">
+              Your chats will show up here once you start one.
+            </p>
+          {{/if}}
+
+          {{#if this.hasBoard}}
+            <div class="sb-board">
+              <div class="sb-board__col">
+                <h2 class="sb-board__heading">Your recent chats</h2>
+                {{#if this.recent.length}}
+                  {{#each this.recent as |card|}}
+                    <a class="sb-board__card" href={{card.url}}>
+                      <span class="sb-board__title">{{card.title}}</span>
+                      <span class="sb-board__meta">{{card.age}}</span>
+                    </a>
+                  {{/each}}
+                {{else}}
+                  <div class="sb-board__empty">
+                    <span class="sb-board__empty-title">No chats yet</span>
+                    <span class="sb-board__empty-text">
+                      Start one above and it'll show up here.
+                    </span>
+                  </div>
+                {{/if}}
+              </div>
+              {{#if this.interesting.length}}
+                <div class="sb-board__col">
+                  <h2 class="sb-board__heading">Interesting topics</h2>
+                  {{#each this.interesting as |card|}}
+                    <a class="sb-board__card" href={{card.url}}>
+                      <span class="sb-board__title">{{card.title}}</span>
+                      <span class="sb-board__meta">{{card.username}}
+                        ·
+                        {{card.age}}</span>
+                    </a>
+                  {{/each}}
+                </div>
+              {{/if}}
+            </div>
+          {{/if}}
         {{/if}}
       {{/if}}
     </div>

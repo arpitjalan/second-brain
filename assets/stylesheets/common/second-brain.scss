@@ -818,6 +818,34 @@ body.archetype-private_message {
   }
 }
 
+// Homepage "search your chats" field — between the prompt chips and the board.
+// Matches the composer's rounded card + accent focus ring.
+.sb-search {
+  margin: 8px 0 4px;
+
+  &__input {
+    width: 100%;
+    border: 1px solid var(--primary-low);
+    border-radius: 12px;
+    background: var(--secondary);
+    color: var(--primary-high);
+    padding: 10px 14px;
+    transition:
+      border-color 0.18s ease,
+      box-shadow 0.18s ease;
+
+    &::placeholder {
+      color: var(--primary-medium);
+    }
+
+    &:focus {
+      outline: none;
+      border-color: transparent;
+      box-shadow: 0 0 0 2px var(--sb-accent);
+    }
+  }
+}
+
 // =============================================================================
 // Homepage "living brain" board — recent chats + what the family shared.
 // =============================================================================
@@ -914,6 +942,27 @@ body.archetype-private_message {
     font-size: var(--font-down-2);
     color: var(--primary-medium);
   }
+}
+
+// Search results: one full-width column of cards (reuses .sb-board__card), with a
+// snippet line under each title. Placed after .sb-board so it wins on source order.
+.sb-board--search {
+  grid-template-columns: 1fr;
+}
+
+.sb-board__col--full {
+  grid-column: 1 / -1;
+}
+
+.sb-board__blurb {
+  display: -webkit-box;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--primary-medium);
+  font-size: var(--font-down-1);
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 // Board empty / error note.
