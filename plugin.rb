@@ -41,6 +41,7 @@ after_initialize do
   # (after the app — ApplicationController, ActiveRecord::Base, Jobs::Base — has loaded).
   require_relative "app/models/second_brain/agent_record"
   require_relative "app/jobs/regular/second_brain_reply"
+  require_relative "app/jobs/scheduled/second_brain_watchdog"
   require_relative "app/controllers/second_brain/chats_controller"
   require_relative "app/controllers/second_brain/widgets_controller"
 

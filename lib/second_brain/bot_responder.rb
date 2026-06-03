@@ -184,6 +184,34 @@ module ::SecondBrain
       Rails.logger.warn("second-brain: failed to surface reply error: #{e.class}: #{e.message}")
     end
 
+    # Called by the watchdog for a turn stranded mid-flight by a hard worker kill
+    # (OOM, deploy restart) before any terminal state — the case the in-line error
+    # handling can't reach because no exception was raised. Finalizes the post with
+    # a clear note WITHOUT calling term-llm, so it can NEVER re-poke a stuck run or
+    # amplify a loop. Preserves any partial content already shown; closes out a
+    # stranded resume's lingering state. Best-effort and self-guarded.
+    def reconcile_stranded!
+      thinking = I18n.t("second_brain.thinking").strip
+      note = I18n.t("second_brain.askuser.interrupted")
+      current = @post.raw.to_s.strip
+      body = current.blank? || current == thinking ? note : "#{@post.raw.rstrip}\n\n#{note}"
+      finalize(@post, body, [])
+
+      # If a resume was stranded (answered but never finalized), close it so it
+      # can't be retried into the same dead run.
+      public_state = parse_json(@post.custom_fields[ASK_FIELD])
+      if public_state
+        public_state["status"] = "interrupted"
+        @post.custom_fields[ASK_FIELD] = public_state.to_json
+        @post.custom_fields.delete(STATE_FIELD)
+        @post.save_custom_fields(true)
+      end
+      true
+    rescue => e
+      Rails.logger.warn("second-brain: watchdog reconcile failed (post #{@post&.id}): #{e.class}: #{e.message}")
+      false
+    end
+
     private
 
     # Atomically mark the triggering post as replied-to. Returns true for the
