@@ -88,4 +88,50 @@ describe SecondBrain::ChatsController do
       expect(response.status).to eq(404) # past the guard; no pending ask_user state
     end
   end
+
+  describe "POST /second-brain/answer (live form collapse)" do
+    fab!(:topic) { Fabricate(:private_message_topic, user: owner, recipient: personal_bot) }
+    fab!(:bot_post) { Fabricate(:post, topic: topic, user: personal_bot) }
+
+    before do
+      bot_post.custom_fields["second_brain_askuser"] = {
+        call_id: "call_1",
+        status: "pending",
+        questions: [{ header: "Vibe", question: "What vibe?", options: [{ label: "Outdoors" }], multi_select: false }],
+      }.to_json
+      bot_post.custom_fields["second_brain_askuser_state"] = {
+        session_id: "sb_#{topic.id}",
+        response_id: "resp_1",
+        last_seq: 3,
+        pre_text: "",
+      }.to_json
+      bot_post.save_custom_fields(true)
+
+      stub_request(:post, "http://personal.test/chat/v1/sessions/sb_#{topic.id}/ask_user").to_return(
+        status: 200,
+        body: { status: "ok", summary: "Vibe: Outdoors" }.to_json,
+        headers: { "Content-Type" => "application/json" },
+      )
+    end
+
+    # Regression: the form would linger as an interactive prompt in the live view
+    # after answering — the run finalized server-side ("done") but the client was
+    # never told, so a post re-render re-painted the form from the stale "pending"
+    # field. The answer action must push the terminal state to participants.
+    it "publishes the answered state so live clients collapse the form to its summary" do
+      sign_in(owner)
+      messages =
+        MessageBus.track_publish("/second-brain/askuser") do
+          post "/second-brain/answer.json",
+               params: { post_id: bot_post.id, call_id: "call_1", answers: [{ selected: "Outdoors" }] },
+               as: :json
+        end
+
+      expect(response.status).to eq(200)
+      expect(messages.size).to eq(1)
+      pushed = messages.first.data[:askuser]
+      expect(pushed["status"]).to eq("answered")
+      expect(pushed["summary"]).to eq("Vibe: Outdoors")
+    end
+  end
 end

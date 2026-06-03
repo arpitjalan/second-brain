@@ -168,6 +168,12 @@ module ::SecondBrain
         # instantly abandoned and the watchdog could race the resume job below.
         post.update_columns(updated_at: Time.zone.now)
 
+        # Collapse the inline form to its answered summary on live clients the
+        # instant the answer lands. The resume job re-renders the post, and the
+        # client's cached "pending" ask_user state would otherwise re-paint the
+        # already-answered form (from a stale field) until a reload.
+        ::SecondBrain::BotResponder.publish_askuser(post, public_state)
+
         Jobs.enqueue(:second_brain_reply, post_id: post.id, mode: "resume")
         return render json: { status: "ok", summary: result["summary"], skipped: cancelled }
       end
