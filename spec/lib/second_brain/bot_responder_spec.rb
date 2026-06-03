@@ -402,7 +402,7 @@ describe SecondBrain::BotResponder do
       expect(reply.raw).to eq("Answer to the new message")
     end
 
-    it "still answers (and uses the stable session) when no question is pending" do
+    it "answers without cancelling when no question is pending (still per-turn session)" do
       pending_post.custom_fields[described_class::ASK_FIELD] = { "status" => "answered" }.to_json
       pending_post.save_custom_fields(true)
       stub_termllm_respond(body: sse_delta("Plain answer", seq: 1) + sse_done)
@@ -412,7 +412,7 @@ describe SecondBrain::BotResponder do
       expect(WebMock).not_to have_requested(:post, %r{/v1/sessions/.*/ask_user})
       expect(
         a_request(:post, "http://termllm.test/chat/v1/responses").with(
-          headers: { "session_id" => "sb_#{topic.id}" },
+          headers: { "session_id" => "sb_#{topic.id}_#{new_message.id}" },
         ),
       ).to have_been_made.once
     end

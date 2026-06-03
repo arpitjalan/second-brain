@@ -73,8 +73,9 @@ module ::SecondBrain
 
       # If a previous turn left a question pending (unanswered), the member sending
       # a new message means "move on": cancel that blocked run on term-llm and mark
-      # it skipped so its form clears.
-      superseded = supersede_pending_question!
+      # it skipped so its form clears. (Cleanup — each turn runs on its own session,
+      # so this isn't needed to avoid a conflict.)
+      supersede_pending_question!
 
       messages = build_messages
       return if messages.empty?
@@ -86,13 +87,14 @@ module ::SecondBrain
       # Show a breathing, self-narrating indicator until the answer starts.
       publish_cooked(placeholder, thinking_html(nil), done: false)
 
-      # A stable session id per chat lets a later request answer/resume an ask_user
-      # prompt (term-llm keys paused runs by session id). But right after superseding
-      # a pending question the cancelled run is still wrapping up on that session, and
-      # term-llm rejects a concurrent run as "session busy" (streaming a conflict_error
-      # that would surface as an empty reply). Use a per-turn session id in that case
-      # so this turn runs cleanly on its own session — answer/resume within it works.
-      session_id = superseded ? "sb_#{@topic.id}_#{@post.id}" : "sb_#{@topic.id}"
+      # Each turn runs on its OWN term-llm session, keyed on the triggering post. A
+      # session stays "busy" for the whole life of its run — including while paused on
+      # ask_user — and term-llm rejects a concurrent run on a busy session (it streams
+      # a conflict_error that surfaces as an empty reply). A per-turn id means a new
+      # message never collides with a previous turn still streaming or awaiting an
+      # answer. Answer/resume within a turn still work: they key off the session id
+      # stored on the post when it paused (see pause_for_ask_user / resume!).
+      session_id = "sb_#{@topic.id}_#{@post.id}"
       result =
         begin
           stream_and_paint(placeholder, "", []) do |on_update|
@@ -258,9 +260,9 @@ module ::SecondBrain
 
     # A new message supersedes any still-pending ask_user question on this chat:
     # cancel the blocked run on term-llm (best-effort) and mark the old question
-    # skipped so its form clears. Returns true if it superseded one (so the caller
-    # runs this turn on a fresh session, away from the still-finishing old run).
-    # Self-guarded — never breaks the new turn.
+    # skipped so its form clears. (Each turn runs on its own session, so this is
+    # cleanup — not needed to avoid a busy conflict.) Returns true if it superseded
+    # one. Self-guarded — never breaks the new turn.
     def supersede_pending_question!
       pending =
         @topic
