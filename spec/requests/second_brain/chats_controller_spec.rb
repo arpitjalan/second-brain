@@ -130,6 +130,23 @@ describe SecondBrain::ChatsController do
       expect(search_as(other, "boilerwarranty")).to be_empty
     end
 
+    it "excludes a personal-agent chat even from a non-owner invited into it" do
+      topic = Fabricate(:private_message_topic, user: owner, recipient: personal_bot)
+      indexed_post(topic, owner, "private boilerwarranty for the owner")
+      Fabricate(:topic_allowed_user, topic: topic, user: other) # invited in later
+
+      expect(search_as(other, "boilerwarranty")).to be_empty
+    end
+
+    it "lets the owner find their own personal-agent chat" do
+      topic = Fabricate(:private_message_topic, user: owner, recipient: personal_bot)
+      indexed_post(topic, owner, "my own boilerwarranty notes")
+
+      expect(search_as(owner, "boilerwarranty").map { |r| r["url"] }.join).to include(
+        topic.relative_url,
+      )
+    end
+
     it "excludes human-to-human PMs (no bot participant)" do
       human_pm = Fabricate(:private_message_topic, user: owner, recipient: other)
       indexed_post(human_pm, owner, "boilerwarranty between two humans")

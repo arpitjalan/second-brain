@@ -90,16 +90,18 @@ module ::SecondBrain
     # a column of interesting public topics worth a look.
     def home
       agent_ids = Agent.bot_user_ids
-      bot_ids_sql = agent_ids_sql(agent_ids)
       limit = SiteSetting.second_brain_board_topics
 
-      # The member's recent chats with any agent bot they participate in (the
-      # sb_me join keeps it to their own chats — personal agents stay private).
+      # The member's recent chats with an agent they may see: family chats they
+      # participate in + their OWN personal-agent chats. Scoping the bot set to
+      # available_to(current_user) (not every bot) keeps a personal-agent chat the
+      # member was merely invited into off their board — mirroring the owner-gate
+      # #answer enforces (being a PM participant isn't enough for a personal agent).
       recent =
         Topic
           .where(archetype: Archetype.private_message, deleted_at: nil)
           .joins("JOIN topic_allowed_users sb_me ON sb_me.topic_id = topics.id AND sb_me.user_id = #{current_user.id.to_i}")
-          .joins("JOIN topic_allowed_users sb_bot ON sb_bot.topic_id = topics.id AND sb_bot.user_id IN (#{bot_ids_sql})")
+          .joins("JOIN topic_allowed_users sb_bot ON sb_bot.topic_id = topics.id AND sb_bot.user_id IN (#{agent_ids_sql(my_agent_bot_ids)})")
           .includes(:user)
           .order(bumped_at: :desc)
           .limit(limit)
@@ -236,7 +238,7 @@ module ::SecondBrain
     # sb_bot scope from #home — sb_me restricts to PMs the caller participates in,
     # sb_bot to bot chats) + public chats shared to the family. uniq'd id list.
     def searchable_topic_ids
-      bot_ids_sql = agent_ids_sql(Agent.bot_user_ids)
+      bot_ids_sql = agent_ids_sql(my_agent_bot_ids)
       me = current_user.id.to_i
 
       pm_ids =
@@ -265,6 +267,14 @@ module ::SecondBrain
         blurb: Search::GroupedSearchResults.blurb_for(cooked: post.cooked, term: query),
         age: short_age(topic.bumped_at),
       }
+    end
+
+    # Bot user ids whose chats this member may see/search: the shared family agent
+    # + the member's OWN personal agents. Excludes other members' personal bots, so
+    # a non-owner merely invited into a personal-agent PM can't see or search it
+    # (the owner-privacy invariant #answer enforces, applied to listing/search).
+    def my_agent_bot_ids
+      Agent.available_to(current_user).filter_map { |a| a.user&.id }
     end
 
     # A safe `IN (...)` list of agent bot user ids (ints; never empty).

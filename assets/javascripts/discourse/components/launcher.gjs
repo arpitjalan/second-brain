@@ -80,6 +80,8 @@ export default class Launcher extends Component {
   @tracked searchResults = [];
   @tracked searchPending = false;
   @tracked searchDone = false;
+  @tracked searchError = false;
+  searchSeq = 0; // discards out-of-order/stale responses
   inputEl = null;
 
   get botUsername() {
@@ -164,6 +166,10 @@ export default class Launcher extends Component {
   @action
   updateSearch(event) {
     this.searchQuery = event.target.value;
+    // Clear the prior verdict so a stale "No matches"/error can't show for a query
+    // that's still being typed or fetched.
+    this.searchDone = false;
+    this.searchError = false;
     debounce(this, this.runSearch, 250);
   }
 
@@ -175,17 +181,29 @@ export default class Launcher extends Component {
     if (q.length < 2) {
       this.searchResults = [];
       this.searchDone = false;
+      this.searchError = false;
       return;
     }
+    const seq = ++this.searchSeq;
     this.searchPending = true;
     try {
       const data = await ajax("/second-brain/search", { data: { q } });
+      if (seq !== this.searchSeq) {
+        return; // a newer query superseded this one — drop the stale response
+      }
       this.searchResults = data.results || [];
+      this.searchError = false;
     } catch {
+      if (seq !== this.searchSeq) {
+        return;
+      }
       this.searchResults = [];
+      this.searchError = true;
     } finally {
-      this.searchPending = false;
-      this.searchDone = true;
+      if (seq === this.searchSeq) {
+        this.searchPending = false;
+        this.searchDone = true;
+      }
     }
   }
 
@@ -433,6 +451,10 @@ export default class Launcher extends Component {
                 {{/each}}
               </div>
             </div>
+          {{else if this.searchError}}
+            <p class="sb-board__note">
+              Search failed — try again.
+            </p>
           {{else if this.searchDone}}
             <p class="sb-board__note">
               No chats match “{{this.searchQuery}}”.
