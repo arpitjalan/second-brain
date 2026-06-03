@@ -144,26 +144,31 @@ properly. Not a cross-user leak either way (no token exposure).
 
 ---
 
-## Other confirmed-but-deferred items (from the code-review sweep)
+## Resolved items (were deferred from the code-review sweep)
 
-Real findings the review verified but that need design/tests, so they were not
-auto-fixed:
+Verified findings that were deferred for design/tests — now done:
 
-- **Resumed reply drops the pre-pause tool summary** (`bot_responder.rb`
-  `resume!` / `pause_for_ask_user`). Persist `pre_tools` in the server state and
-  read them back **with symbol keys** (`transform_keys(&:to_sym)` — render code
-  uses symbols, `JSON.parse` yields strings). Wants a spec
-  (tools→ask→resume→tools), which is why it's deferred.
-- **Reply job swallows non-network errors with no user-visible resolution**
-  (`app/jobs/regular/second_brain_reply.rb`). Partly mitigated by the broadened
-  connection-error rescues; the blanket case interacts with `claim_turn!`
-  (a second attempt no-ops) so resolving the placeholder safely is a design call.
-- **No reply-flow / ask_user spec harness yet.** Request + agent specs now exist
-  (`spec/lib/second_brain/agent_spec.rb`,
-  `spec/requests/second_brain/{chats,widgets}_controller_spec.rb` — 23 examples),
-  covering agent access/privacy + the widget proxy, but NOT the streaming reply →
-  ask_user → resume path. A spec harness for that flow would let several of the
-  above (e.g. the `pre_tools` fix) land safely.
+- **✓ Resumed reply drops the pre-pause tool summary.** Fixed:
+  `pause_for_ask_user` persists `pre_tools` in the server state and `resume!`
+  reads them back with symbol keys (`transform_keys(&:to_sym)`) and seeds the
+  continuation with them, so a resumed answer re-renders the pre-pause tool
+  summary and a second pause keeps all prior tools. Pinned by the reply-flow
+  harness (`spec/lib/second_brain/bot_responder_spec.rb`, "ask_user round-trip").
+- **✓ Reply job swallows non-network errors with no user-visible resolution.**
+  Fixed: the job now surfaces unexpected errors on the placeholder via
+  `BotResponder#abort_with_failure!` (a `@finalized` guard keeps it from
+  clobbering a real answer / pending question) and logs a greppable tag; it still
+  never re-raises (no Sidekiq retry storm). Shipped alongside an idempotent
+  `resume!` (`claim_resume!`, keyed on post + answered `call_id`) and a
+  configurable SSE idle timeout (`second_brain_stream_idle_timeout`).
+- **✓ Reply-flow / ask_user spec harness.** Built: `spec/support/term_llm_sse.rb`
+  scripts a fake term-llm SSE (text deltas, tool start/end, ask_user prompt,
+  `[DONE]`, CRLF framing, error shapes). `bot_responder_spec.rb` drives
+  `respond!`/`resume!` end-to-end (plain + tool replies, `claim_turn!` dedup,
+  error→`reply_failed`, finalize-once, auto-title, the full
+  pause→answer→resume→second-pause round-trip, `claim_resume!` dedup);
+  `term_llm_client_spec.rb` covers `run_sse` + `submit_ask_user` branches. Plugin
+  suite is now 54 examples.
 
-These came from a multi-agent review (45 findings → 33 real → 19 low-hanging,
-all of which are fixed as of commit `7eceff3`).
+The original sweep: 45 findings → 33 real → 19 low-hanging, all fixed as of commit
+`7eceff3`.

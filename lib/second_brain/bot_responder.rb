@@ -120,12 +120,15 @@ module ::SecondBrain
       session_id = server_state["session_id"]
       pre_text = server_state["pre_text"].to_s
       after = server_state["last_seq"].to_i
+      # JSON.parse gives string keys; the render code reads tool hashes by symbol
+      # (t[:name], t[:done], …), so restore symbol keys for the seeded tools.
+      pre_tools = Array(server_state["pre_tools"]).map { |t| t.transform_keys(&:to_sym) }
 
       publish_cooked(@post, thinking_html(nil), done: false)
       error = nil
       result =
         begin
-          stream_and_paint(@post, pre_text, []) do |on_update|
+          stream_and_paint(@post, pre_text, pre_tools) do |on_update|
             @agent.client.stream_events(response_id: response_id, after: after, &on_update)
           end
         rescue TermLlmClient::Error => e
@@ -135,7 +138,7 @@ module ::SecondBrain
         end
 
       full_text = pre_text + result[:text].to_s
-      tools = result[:tools] || []
+      tools = pre_tools + (result[:tools] || [])
 
       if result[:ask_user]
         # The continuation asked another question — pause again.
@@ -289,6 +292,9 @@ module ::SecondBrain
         "response_id" => result[:response_id],
         "last_seq" => result[:last_seq],
         "pre_text" => pre_text,
+        # Carry the tools that ran before the pause so the resumed continuation
+        # re-renders them above its answer (read back with symbol keys in resume!).
+        "pre_tools" => pre_tools,
       }
 
       body = render_reply(pre_text, pre_tools)
