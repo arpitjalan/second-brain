@@ -19,8 +19,13 @@ session id — so a *different* client/process can answer it later.
       "options": [ { "label": "Road trip", "description": "Easy drive…" }, … ],
       "multi_select": false } ] }
   ```
-- **Session id is client-controlled:** send request header `session_id: sb_<topic_id>`
-  on `POST /v1/responses`. The run is then addressable by that id.
+- **Session id is client-controlled:** send request header `session_id: sb_<topic_id>_<post_id>`
+  on `POST /v1/responses`. Each turn runs on its **own** session (keyed on the
+  triggering post): a term-llm session stays busy for the whole life of its run —
+  including while paused on `ask_user` — so a per-turn id keeps a new message from
+  colliding with a still-streaming or paused prior turn (a concurrent run on a busy
+  session is rejected as a `conflict_error`). Answer/resume key off the session id
+  persisted in the post state at pause time, so they still address the right run.
 - **Answer / resume** (connection-independent — term-llm's resume is session-keyed,
   not connection-bound, so a different process can answer later): `POST /v1/sessions/{session_id}/ask_user`
   ```json
@@ -60,7 +65,7 @@ rule. For the **family/shared** agent, any chat participant may answer. For a
 answering to the agent's owner (or staff) — being a PM participant isn't enough.
 
 ```
-ASK    job → POST /v1/responses (header session_id=sb_<topic_id>), stream
+ASK    job → POST /v1/responses (header session_id=sb_<topic_id>_<post_id>), stream
 PAUSE  job sees response.ask_user.prompt → persist state on the post → DISCONNECT
          (the run stays alive server-side)
 ANSWER user picks options in the post → POST /second-brain/answer {post_id,call_id,answers}
@@ -68,15 +73,25 @@ ANSWER user picks options in the post → POST /second-brain/answer {post_id,cal
 RESUME controller marks the post answered + enqueues a resume job
          → job → GET /v1/responses/{response_id}/events?after={seq}
          → streams the continuation into the same post → finalize
+SKIP   instead of answering, the member sends a NEW message → respond! calls
+         supersede_pending_question!: best-effort POST …/ask_user {cancelled:true}
+         + marks the prior question `skipped` (its form clears). Cleanup only — each
+         turn's own session means it isn't needed to avoid a conflict.
 ```
 
 ### Data model (two post custom fields)
 
 - `second_brain_askuser` (**client-exposed** via `add_to_serializer` + the topic-view
   allowlister): `{ call_id, status, questions, summary }`. `status` ∈
-  `pending | answered | done | expired`.
+  `pending | answered | done | expired | interrupted | skipped`. `interrupted` = the
+  continuation lost its connection, or the watchdog reconciled a stranded turn;
+  `skipped` = a later message superseded a still-pending question (or the user
+  cancelled).
 - `second_brain_askuser_state` (**server-only**, never serialized): `{ session_id,
-  response_id, last_seq, pre_text }`.
+  response_id, last_seq, pre_text, pre_tools }`. `pre_tools` carries the tool summary
+  that ran before the pause; `resume!` reads it back with symbol keys
+  (`transform_keys(&:to_sym)` — `JSON.parse` yields strings) so the resumed answer
+  re-renders those tools.
 
 ### Code map
 
@@ -84,7 +99,7 @@ RESUME controller marks the post answered + enqueues a resume job
 |---|---|
 | `lib/second_brain/agent.rb` | `Agent.for_topic` selects the agent participating in the chat (family or personal); `Agent#client` returns a `TermLlmClient` bound to that agent's url/token/model. Streaming/answering goes through `@agent.client` — every term-llm call below is routed via the chat's agent |
 | `lib/second_brain/term_llm_client.rb` | `stream_respond(session_id:)` parses the `id:`/`response.created`/`ask_user.prompt` events and returns `{text,tools,ask_user,response_id,last_seq}`; `stream_events(response_id:,after:)` reconnects; `submit_ask_user(...)` answers (raises `Expired` on 404/409) — passing `cancelled: true` skips the question (sends `{cancelled:true}` instead of `answers`), and the controller records `skipped`/returns `skipped:true` |
-| `lib/second_brain/bot_responder.rb` | `respond!`→`conclude` pauses or finalizes; `pause_for_ask_user` persists state + refreshes clients once; `resume!` streams the continuation, seeded with the pre-prompt text |
+| `lib/second_brain/bot_responder.rb` | `respond!`→`conclude` pauses or finalizes; `pause_for_ask_user` persists state (incl. `pre_tools`) + refreshes clients once; `resume!` streams the continuation, seeded with the pre-pause text **and tools** (claimed via `claim_resume!` so a duplicate job no-ops); a new message while paused calls `supersede_pending_question!` (cancel + mark `skipped`) |
 | `app/controllers/second_brain/chats_controller.rb` | `answer` — validates, submits to term-llm, marks answered, enqueues the resume job (`410` on expiry) |
 | `app/jobs/regular/second_brain_reply.rb` | `mode: "resume"` → `resume!` |
 | `plugin.rb` | custom-field registration, allowlister + serializer, `POST /second-brain/answer` |

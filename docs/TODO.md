@@ -167,8 +167,22 @@ Verified findings that were deferred for design/tests — now done:
   `respond!`/`resume!` end-to-end (plain + tool replies, `claim_turn!` dedup,
   error→`reply_failed`, finalize-once, auto-title, the full
   pause→answer→resume→second-pause round-trip, `claim_resume!` dedup);
-  `term_llm_client_spec.rb` covers `run_sse` + `submit_ask_user` branches. Plugin
-  suite is now 54 examples.
+  `term_llm_client_spec.rb` covers `run_sse` + `submit_ask_user` branches.
+- **✓ Stuck-turn watchdog.** `app/jobs/scheduled/second_brain_watchdog.rb` (every 5m)
+  + `BotResponder#reconcile_stranded!` finalize turns stranded by a hard worker kill
+  (still on "Thinking…", or answered-but-unfinalized) **without calling term-llm**.
+  Liveness is tracked by a streaming heartbeat on the post's `updated_at`
+  (`ALIVE_INTERVAL`); the cutoff is derived from `second_brain_stream_idle_timeout`
+  so a live-but-quiet turn is never cut. Spec: `spec/jobs/second_brain_watchdog_spec.rb`.
+- **✓ Per-turn term-llm session id** (`sb_<topic>_<post>`) so a new message never
+  collides with a busy session (a prior turn still streaming or paused), and
+  **✓ supersede-on-new-message** (`supersede_pending_question!`): a new message cancels
+  a still-pending question's run and marks it `skipped`.
+- **✓ Configurable SSE idle timeout** (`second_brain_stream_idle_timeout`, default 300)
+  + idempotent `resume!` (`claim_resume!`) + error-surfacing reply job
+  (`abort_with_failure!`).
+
+Plugin suite is now **69 examples**.
 
 The original sweep: 45 findings → 33 real → 19 low-hanging, all fixed as of commit
 `7eceff3`.

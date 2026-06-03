@@ -124,7 +124,9 @@ prompt to see the interactive question form.
 | `second_brain_term_llm_url` | term-llm base URL incl. base path, e.g. `http://localhost:8081/chat` |
 | `second_brain_term_llm_api_key` | Bearer token (`WEB_TOKEN`) — server-side only, never sent to the browser |
 | `second_brain_term_llm_model` | Optional; blank = term-llm's default |
+| `second_brain_stream_idle_timeout` | Abort a streaming reply after this many seconds of silence from term-llm, freeing the worker (default 300). Keep it above the longest a single tool runs silently. |
 | `second_brain_bot_username` | The assistant's account username (default `stan`) |
+| `second_brain_board_topics` | Topics per homepage board column — recent chats + interesting (default 5) |
 | `second_brain_public_category` | Category "Make public" posts into; blank = auto-pick |
 | `second_brain_forum_actions_enabled` | Let the bot act on the forum (needs the `discourse` skill + creds on stan) |
 

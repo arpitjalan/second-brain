@@ -134,13 +134,14 @@ environment, never in the skill file or the conversation.
 |---|---|
 | `plugin.rb` | Wiring: custom-homepage modifier, `post_created` hook, route registration, `require_relative` of app/ classes |
 | `lib/second_brain/bot.rb` | Find/create the bot user from `second_brain_bot_username` |
-| `lib/second_brain/bot_responder.rb` | Core: guards, transcript, streaming, tool rendering, auto-title, widget-link rewrite, forum context |
-| `lib/second_brain/term_llm_client.rb` | HTTP client to term-llm: `stream_respond` (agentic SSE), `respond`, `complete` (titling), SSE parsing |
+| `lib/second_brain/bot_responder.rb` | Core: guards, turn claim, transcript, streaming (per-turn session id + a heartbeat that keeps `updated_at` fresh), tool rendering, auto-title, ask_user pause/`resume!`, `abort_with_failure!` (surface unexpected errors), `reconcile_stranded!` (watchdog), `supersede_pending_question!`, widget-link rewrite, forum context |
+| `lib/second_brain/term_llm_client.rb` | HTTP client to term-llm: `stream_respond` (agentic SSE), `stream_events` (resume reconnect), `submit_ask_user`, `respond`, `complete` (titling), SSE parsing; the streaming `read_timeout` is the configurable `second_brain_stream_idle_timeout` (idle timeout) |
 | `app/controllers/second_brain/chats_controller.rb` | `create` (start a chat PM, agent-aware), `make_public` (convert PM → public topic), `agents` (list agents for the switcher), `home` (homepage board), `answer` (resume an `ask_user` run) |
 | `app/controllers/second_brain/widgets_controller.rb` | Widget reverse proxy (`#show`) + listing (`#index`) |
 | `lib/second_brain/agent.rb` | `SecondBrain::Agent` abstraction — family + personal agents, resolution, per-agent client/token/model |
 | `app/models/second_brain/agent_record.rb` | `second_brain_agents` registry model |
-| `app/jobs/regular/second_brain_reply.rb` | Runs `respond!` off-request; swallows errors (no retry storm) |
+| `app/jobs/regular/second_brain_reply.rb` | Runs `respond!`/`resume!` off-request; on an unexpected error surfaces a failure on the post via `abort_with_failure!` + logs a greppable tag, but never re-raises (no retry storm) |
+| `app/jobs/scheduled/second_brain_watchdog.rb` | Periodic backstop (every 5m): finalizes turns stranded by a hard worker kill (still on "Thinking…", or answered-but-unfinalized) past a derived cutoff, via `BotResponder#reconcile_stranded!` — **never calls term-llm** |
 | `assets/javascripts/.../second-brain-stream.js` | Streams cooked HTML into the post by morphing the live `.cooked` DOM (morphlex) |
 | `assets/javascripts/.../second-brain-widgets*.js` | Iframe decorator + widgets sidebar |
 | `assets/javascripts/.../second-brain-make-public.js` | "Make public" topic footer button |
@@ -175,8 +176,12 @@ environment, never in the skill file or the conversation.
   need a full Rails restart; JS/SCSS hot-reload.
 - **Secret stays server-side.** The term-llm Bearer token is a `secret` setting, used
   only by server-side code (the proxy + the chat client over MessageBus).
-- **term-llm is remote & may be down.** All calls have timeouts; the reply job
-  swallows errors so a failure never causes a retry storm or breaks the forum.
+- **term-llm is remote & may be down.** All calls have timeouts, and a streaming
+  reply also aborts after `second_brain_stream_idle_timeout` of silence. The reply
+  job never re-raises (no Sidekiq retry storm), and failures are *surfaced on the
+  post* rather than left as a stuck "Thinking…" placeholder: a `TermLlmClient::Error`
+  → `reply_failed`, an unexpected error → `abort_with_failure!`, and a turn killed
+  mid-flight (OOM/deploy) → reconciled by the watchdog.
 - **Custom homepage** via the core `:custom_homepage_enabled` modifier rendering the
   `custom-homepage` plugin outlet (not a theme, not the Blocks API).
 - **Calm defaults, never clobbered.** `rake second_brain:setup` seeds the calm
