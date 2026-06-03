@@ -140,7 +140,8 @@ describe SecondBrain::BotResponder do
     it "writes the final answer to the DB once" do
       stub_termllm_respond(body: sse_delta("Done.", seq: 1) + sse_done)
 
-      Post.any_instance.expects(:update_columns).with(has_key(:raw)).once.returns(true)
+      Post.any_instance.stubs(:update_columns) # allow the streaming heartbeat (updated_at)
+      Post.any_instance.expects(:update_columns).with(has_key(:raw)).once # the final write
       Post.any_instance.stubs(:rebake!)
 
       described_class.new(human_post).respond!

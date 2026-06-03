@@ -9,9 +9,8 @@ module ::Jobs
   class SecondBrainWatchdog < ::Jobs::Scheduled
     every 5.minutes
 
-    # A turn older than this is treated as abandoned. Must exceed the longest real
-    # turn (comfortably above the streaming idle timeout) so it never cuts a live one.
-    STUCK_AFTER = 30.minutes
+    # Floor for how long a turn must go untouched before it's treated as abandoned.
+    STUCK_AFTER_SECONDS = 1800 # 30 minutes
 
     def execute(_args)
       return unless SiteSetting.second_brain_enabled
@@ -19,12 +18,23 @@ module ::Jobs
       bot_ids = ::SecondBrain::Agent.bot_user_ids
       return if bot_ids.blank?
 
-      cutoff = STUCK_AFTER.ago
       reconcile_stuck_placeholders(bot_ids, cutoff)
       reconcile_stuck_resumes(bot_ids, cutoff)
     end
 
     private
+
+    # A live turn heartbeats its updated_at on every SSE frame (BotResponder
+    # ALIVE_INTERVAL); the largest gap between heartbeats is one fully-silent tool
+    # window — bounded by second_brain_stream_idle_timeout, which is operator-tunable
+    # up to 3600s. Reconcile only well past that so a live-but-quiet turn is never
+    # cut. So a row is "abandoned" once it's untouched for max(30m, ~2x the idle
+    # window), by which point a live turn would have heartbeated.
+    def cutoff
+      idle = SiteSetting.second_brain_stream_idle_timeout.to_i
+      idle = 600 if idle <= 0
+      [STUCK_AFTER_SECONDS, (idle * 2) + 300].max.seconds.ago
+    end
 
     # Bot posts still showing the live "Thinking…" placeholder long after any real
     # turn would have finished or errored.

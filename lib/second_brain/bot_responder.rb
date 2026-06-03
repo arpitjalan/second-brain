@@ -56,6 +56,12 @@ module ::SecondBrain
     # Minimum seconds between live post updates while streaming.
     STREAM_THROTTLE = 0.6
 
+    # Minimum seconds between "still alive" touches of the post's updated_at while
+    # streaming. Streaming otherwise writes nothing to the DB (it only publishes
+    # over MessageBus), so without this a long-but-live turn looks stale to the
+    # watchdog. Far coarser than STREAM_THROTTLE — at most one tiny write/minute.
+    ALIVE_INTERVAL = 60
+
     # Post custom fields holding the interactive ask_user state. ASK_FIELD is
     # client-exposed (questions/status/summary); STATE_FIELD is server-only
     # (session_id/response_id/sequence/pre-prompt text) and never serialized.
@@ -202,15 +208,24 @@ module ::SecondBrain
     # amplify a loop. Preserves any partial content already shown; closes out a
     # stranded resume's lingering state. Best-effort and self-guarded.
     def reconcile_stranded!
+      # Re-read the row: a live turn may have finalized between the watchdog's
+      # SELECT and now (and a live turn keeps updated_at fresh via the streaming
+      # heartbeat, so an eligible row is almost certainly dead anyway). Only act if
+      # it's STILL stranded — never clobber a resolved or live turn.
+      @post.reload
       thinking = I18n.t("second_brain.thinking").strip
-      note = I18n.t("second_brain.askuser.interrupted")
       current = @post.raw.to_s.strip
+      public_state = parse_json(@post.custom_fields[ASK_FIELD])
+      answered_resume =
+        public_state && public_state["status"] == "answered" && @post.custom_fields[STATE_FIELD].present?
+      return false unless current == thinking || answered_resume
+
+      note = I18n.t("second_brain.askuser.interrupted")
       body = current.blank? || current == thinking ? note : "#{@post.raw.rstrip}\n\n#{note}"
       finalize(@post, body, [])
 
-      # If a resume was stranded (answered but never finalized), close it so it
-      # can't be retried into the same dead run.
-      public_state = parse_json(@post.custom_fields[ASK_FIELD])
+      # Close out a stranded resume's lingering state so it can't be retried into
+      # the same dead run.
       if public_state
         public_state["status"] = "interrupted"
         @post.custom_fields[ASK_FIELD] = public_state.to_json
@@ -304,6 +319,15 @@ module ::SecondBrain
       Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
 
+    # Mark a turn as still alive by bumping the post's updated_at. The watchdog
+    # uses updated_at as the liveness clock; streaming never writes the row, so we
+    # touch it here. Best-effort — a failed heartbeat must not break the stream.
+    def touch_alive(post)
+      post.update_columns(updated_at: Time.zone.now)
+    rescue => e
+      Rails.logger.warn("second-brain: heartbeat touch failed (post #{post&.id}): #{e.class}: #{e.message}")
+    end
+
     # Stream a term-llm call into `post`, painting the (optionally seeded) reply
     # as it accumulates. `seed_text`/`seed_tools` prefix a resumed continuation
     # with the text/tools produced before the ask_user pause. Yields an on_update
@@ -311,11 +335,19 @@ module ::SecondBrain
     def stream_and_paint(post, seed_text, seed_tools)
       last_update = monotonic
       last_tool_sig = nil
+      # Mark the turn live as streaming begins (the placeholder may have been
+      # created much earlier by the chat controller), then heartbeat periodically.
+      touch_alive(post)
+      last_alive = monotonic
       on_update =
         proc do |text, tools|
           full_text = seed_text.to_s + text.to_s
           all_tools = seed_tools + tools
           now = monotonic
+          if now - last_alive >= ALIVE_INTERVAL
+            touch_alive(post)
+            last_alive = now
+          end
           tool_sig = all_tools.map { |t| [t[:name], t[:done]] }
           if tool_sig != last_tool_sig || now - last_update >= STREAM_THROTTLE
             if full_text.strip.present?

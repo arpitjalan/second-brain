@@ -163,6 +163,10 @@ module ::SecondBrain
         public_state["skipped"] = true if cancelled
         post.custom_fields["second_brain_askuser"] = public_state.to_json
         post.save_custom_fields(true)
+        # Restart the watchdog's staleness clock from the answer (a question may
+        # have sat pending for a long time); otherwise the just-answered post looks
+        # instantly abandoned and the watchdog could race the resume job below.
+        post.update_columns(updated_at: Time.zone.now)
 
         Jobs.enqueue(:second_brain_reply, post_id: post.id, mode: "resume")
         return render json: { status: "ok", summary: result["summary"], skipped: cancelled }

@@ -77,4 +77,36 @@ describe Jobs::SecondBrainWatchdog do
     expect(JSON.parse(post.custom_fields[ask_field])["status"]).to eq("interrupted")
     expect(post.custom_fields[state_field]).to be_nil # lingering state dropped
   end
+
+  it "leaves a freshly-answered resume alone (its clock restarts at answer time)" do
+    post = Fabricate(:post, topic: topic, user: bot)
+    post.custom_fields[ask_field] = { "status" => "answered", "call_id" => "c1" }.to_json
+    post.custom_fields[state_field] = { "session_id" => "s", "response_id" => "r", "last_seq" => 1 }.to_json
+    post.save_custom_fields(true)
+    post.update_columns(updated_at: 2.minutes.ago) # just answered — resume in flight
+
+    run!
+
+    post.reload
+    expect(JSON.parse(post.custom_fields[ask_field])["status"]).to eq("answered")
+    expect(post.custom_fields[state_field]).to be_present
+  end
+
+  it "does not reconcile within the idle-timeout-derived cutoff (a long silent tool is still live)" do
+    SiteSetting.second_brain_stream_idle_timeout = 3600 # cutoff -> max(30m, ~2h5m)
+    placeholder = SecondBrain::BotResponder.ensure_placeholder(topic)
+    placeholder.update_columns(updated_at: 90.minutes.ago) # stale by 90m, but < derived cutoff
+
+    run!
+
+    expect(placeholder.reload.raw).to eq(thinking) # untouched — could be a live silent tool
+  end
+
+  it "reconcile_stranded! bails without clobbering a post that is no longer stranded" do
+    post = Fabricate(:post, topic: topic, user: bot)
+    post.update_columns(raw: "The real finished answer.")
+
+    expect(SecondBrain::BotResponder.new(post).reconcile_stranded!).to eq(false)
+    expect(post.reload.raw).to eq("The real finished answer.")
+  end
 end
