@@ -266,4 +266,85 @@ describe SecondBrain::BotResponder do
       )
     end
   end
+
+  # Using the harness as a probe: drive respond!/resume! through failure modes to
+  # confirm the reliability fixes (error surfacing, idle timeout, graceful resume)
+  # actually hold end-to-end — and to characterize what's still residual.
+  describe "failure-mode probes" do
+    before do
+      topic.custom_fields["second_brain_titled"] = true
+      topic.save_custom_fields
+    end
+
+    let(:bot_reply) { topic.reload.posts.find_by(user_id: bot.id) }
+
+    it "shows the empty-reply message when term-llm streams nothing" do
+      stub_termllm_respond(body: sse_done)
+
+      described_class.new(human_post).respond!
+
+      expect(bot_reply.raw).to eq(I18n.t("second_brain.empty_reply"))
+    end
+
+    it "surfaces reply_failed on a mid-flight connection reset" do
+      stub_request(:post, "http://termllm.test/chat/v1/responses").to_raise(Errno::ECONNRESET)
+
+      described_class.new(human_post).respond!
+
+      expect(bot_reply.raw).to include(reply_failed)
+    end
+
+    it "surfaces reply_failed when term-llm goes silent (read timeout fires)" do
+      # Stands in for the idle-timeout path: a wedged term-llm trips read_timeout,
+      # which run_sse maps to TermLlmClient::Error -> reply_failed (worker freed).
+      stub_request(:post, "http://termllm.test/chat/v1/responses").to_timeout
+
+      described_class.new(human_post).respond!
+
+      expect(bot_reply.raw).to include(reply_failed)
+    end
+
+    it "finalizes a resume gracefully when the replay buffer was evicted (409)" do
+      # Set up a paused-then-answered post, then make the reconnect 409.
+      body =
+        sse_created("resp_1", seq: 1) + sse_delta("Partial. ", seq: 2) +
+          sse_ask_user(call_id: "c1", questions: [{ "header" => "Q" }], seq: 3)
+      stub_termllm_respond(body: body)
+      described_class.new(human_post).respond!
+      post = topic.reload.posts.find_by(user_id: bot.id)
+      state = JSON.parse(post.custom_fields[described_class::ASK_FIELD])
+      state["status"] = "answered"
+      post.custom_fields[described_class::ASK_FIELD] = state.to_json
+      post.save_custom_fields(true)
+
+      stub_termllm_events(response_id: "resp_1", after: 3, status: 409, body: "")
+      described_class.new(post).resume!
+
+      post.reload
+      expect(post.raw).to include(I18n.t("second_brain.askuser.interrupted"))
+      expect(JSON.parse(post.custom_fields[described_class::ASK_FIELD])["status"]).to eq("interrupted")
+    end
+
+    # Residual stuck-case (not yet fixed): if term-llm pauses on ask_user WITHOUT
+    # ever emitting response.created, the stored response_id is blank and resume!
+    # bails — the post stays "answered" forever with no continuation. Low realism
+    # (the initial stream should always emit response.created), but it's exactly
+    # the class of "stranded mid-turn" the rank-6 watchdog is meant to reconcile.
+    it "(residual) a resume with no response_id silently no-ops — needs the watchdog" do
+      body = sse_ask_user(call_id: "c1", questions: [{ "header" => "Q" }], seq: 1) # no response.created
+      stub_termllm_respond(body: body)
+      described_class.new(human_post).respond!
+      post = topic.reload.posts.find_by(user_id: bot.id)
+      state = JSON.parse(post.custom_fields[described_class::ASK_FIELD])
+      state["status"] = "answered"
+      post.custom_fields[described_class::ASK_FIELD] = state.to_json
+      post.save_custom_fields(true)
+
+      described_class.new(post).resume!
+
+      # No reconnect attempted, post left stranded — documents the gap.
+      expect(WebMock).not_to have_requested(:get, %r{/v1/responses/.*/events})
+      expect(JSON.parse(post.reload.custom_fields[described_class::ASK_FIELD])["status"]).to eq("answered")
+    end
+  end
 end
