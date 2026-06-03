@@ -5,6 +5,7 @@ en:
     second_brain_term_llm_url: "Base URL of your term-llm server, including its base path (e.g. https://brain.example.com/ui). The plugin calls its OpenAI-compatible API server-side."
     second_brain_term_llm_api_key: "Bearer token for the term-llm server (sent server-side only; never exposed to the browser)."
     second_brain_term_llm_model: "Model to request from term-llm. Leave blank to use term-llm's default."
+    second_brain_stream_idle_timeout: "Abort a streaming reply after this many seconds with no response from term-llm, freeing the worker. Keep it above the longest your bot can run a single tool silently. Default 300."
     second_brain_forum_actions_enabled: "Tell the bot it can act on this forum (create topics, reply, search). Requires the term-llm `discourse` skill + credentials configured on the term-llm server."
   second_brain:
     thinking: "_Thinking…_"

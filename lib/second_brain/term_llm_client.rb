@@ -147,7 +147,7 @@ module ::SecondBrain
     # response_id, and the NEXT ask_user round loses the run — resume! bails on a
     # blank response_id and the post hangs forever.
     def run_sse(uri, request, response_id: nil)
-      http = build_http(uri, read_timeout: 600)
+      http = build_http(uri, read_timeout: stream_idle_timeout)
 
       text = +""
       tools = []
@@ -280,6 +280,19 @@ module ::SecondBrain
       http.open_timeout = 10
       http.read_timeout = read_timeout
       http
+    end
+
+    # Per-read socket timeout for the streaming SSE connection. Net::HTTP applies
+    # read_timeout to each individual socket read, so this is effectively an
+    # *idle* timeout: the stream aborts only after this many seconds with NO frame
+    # at all — text deltas and tool start/end events each reset it. A wedged/silent
+    # term-llm then frees its Sidekiq worker after this window instead of holding it
+    # for the old hard 600s. Set the site setting safely above the longest your bot
+    # can run a single tool *silently* (no progress events). Net::ReadTimeout on
+    # trip is rescued in run_sse and surfaced as TermLlmClient::Error.
+    def stream_idle_timeout
+      t = SiteSetting.second_brain_stream_idle_timeout.to_i
+      t.positive? ? t : 600
     end
 
     def post_json(path, body)

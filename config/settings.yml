@@ -11,6 +11,13 @@ plugins:
     secret: true
   second_brain_term_llm_model:
     default: ""
+  # Abort a streaming reply after this many seconds of total silence from term-llm
+  # (no text or tool events), freeing the Sidekiq worker instead of holding it.
+  # Keep it above the longest your bot can run a single tool silently.
+  second_brain_stream_idle_timeout:
+    default: 300
+    min: 30
+    max: 3600
   # --- chat (PM-backed) ---
   second_brain_bot_username:
     default: "stan"

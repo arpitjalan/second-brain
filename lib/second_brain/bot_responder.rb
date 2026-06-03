@@ -47,6 +47,10 @@ module ::SecondBrain
       @post = post
       @topic = post.topic
       @agent = Agent.for_topic(@topic) || Agent.family
+      # Set once the turn reaches a terminal state (a finalized answer or a
+      # paused question). Guards abort_with_failure! from clobbering a resolved
+      # post if an unexpected error fires afterwards.
+      @finalized = false
     end
 
     # Minimum seconds between live post updates while streaming.
@@ -104,6 +108,12 @@ module ::SecondBrain
       return if public_state.nil? || server_state.nil?
       return unless public_state["status"] == "answered"
 
+      # Sidekiq is at-least-once: claim this resume so a re-delivered or
+      # concurrent duplicate job can't double-stream and double-finalize into the
+      # same post. (The status flip to "done"/"interrupted" below already blocks a
+      # *later* duplicate; this closes the concurrent window before that happens.)
+      return unless claim_resume!(public_state["call_id"])
+
       response_id = server_state["response_id"].to_s
       return if response_id.blank?
 
@@ -152,6 +162,25 @@ module ::SecondBrain
       maybe_title!(build_messages)
     end
 
+    # Called by the reply job when respond!/resume! raised an *unexpected* error
+    # (a TermLlmClient::Error is already handled inside them and resolves the
+    # post). Ensures the member never sits on a "Thinking…" placeholder forever:
+    # paint the generic failure message onto the post being worked — unless we
+    # already reached a terminal state (a finalized answer or a paused question),
+    # which we must not clobber. Best-effort and self-guarded so it can't re-raise
+    # back into the job.
+    def abort_with_failure!(resume:)
+      return if @finalized
+
+      # respond! paints the not-yet-resolved "Thinking…" placeholder; resume!
+      # works the bot post itself.
+      post = resume ? @post : self.class.ensure_placeholder(@topic, @agent)
+      return if post.nil?
+      finalize(post, I18n.t("second_brain.errors.reply_failed"), [])
+    rescue => e
+      Rails.logger.warn("second-brain: failed to surface reply error: #{e.class}: #{e.message}")
+    end
+
     private
 
     # Atomically mark the triggering post as replied-to. Returns true for the
@@ -170,6 +199,19 @@ module ::SecondBrain
       DistributedMutex.synchronize("second-brain-reply-#{@post.id}") do
         next false if PostCustomField.exists?(post_id: @post.id, name: "second_brain_replied")
         PostCustomField.create!(post_id: @post.id, name: "second_brain_replied", value: "t")
+        true
+      end
+    end
+
+    # Like claim_turn!, but for a resume. Keyed on the bot post + the *answered*
+    # call_id (not just the post) so a genuine next ask_user round — same post,
+    # new call_id — can still resume, while a duplicate job for the same answer
+    # no-ops. A blank call_id (shouldn't happen) collapses to a single claim.
+    def claim_resume!(call_id)
+      field = "second_brain_resumed_#{call_id}"
+      DistributedMutex.synchronize("second-brain-resume-#{@post.id}-#{call_id}") do
+        next false if PostCustomField.exists?(post_id: @post.id, name: field)
+        PostCustomField.create!(post_id: @post.id, name: field, value: "t")
         true
       end
     end
@@ -223,6 +265,11 @@ module ::SecondBrain
     # the interactive form renders (client-side, from the serialized ASK_FIELD).
     def pause_for_ask_user(post, session_id, result, pre_text, pre_tools)
       au = result[:ask_user] || {}
+
+      # A paused question is a terminal state for this turn — the abort path must
+      # not later overwrite it with a failure message (this also covers the
+      # duplicate-question early return below, which keeps an existing question).
+      @finalized = true
 
       # Don't clobber a question that's already awaiting the user with a different
       # one — that would make the first unanswerable. (Defensive; rare.)
@@ -279,6 +326,7 @@ module ::SecondBrain
       post.rebake!
       publish_stream(post, final, done: true)
       post.publish_change_to_clients!(:revised)
+      @finalized = true
     end
 
     def parse_json(raw)
