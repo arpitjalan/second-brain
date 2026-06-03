@@ -343,6 +343,7 @@ export default class Launcher extends Component {
                 @disabled={{this.starting}}
               />
               <a class="sb-starter__link" href={{this.myChatsUrl}}>Your chats</a>
+              <span class="sb-starter__hint">Enter to send · Shift+Enter for newline</span>
             </span>
             <DButton
               @action={{this.start}}

@@ -270,6 +270,20 @@ body.archetype-private_message {
   gap: 10px;
 }
 
+// Muted keyboard hint next to the launcher's "Your chats" link (mirrors the
+// chat reply box's Enter-to-send hint). Hidden on narrow/touch screens, where
+// the hint doesn't apply and would crowd the row.
+.sb-starter__hint {
+  color: var(--primary-medium);
+  font-weight: normal;
+}
+
+@media (width <= 600px) {
+  .sb-starter__hint {
+    display: none;
+  }
+}
+
 .sb-attach {
   display: inline-flex;
   align-items: center;
