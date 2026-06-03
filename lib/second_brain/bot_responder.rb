@@ -71,6 +71,11 @@ module ::SecondBrain
       # term-llm and streaming a duplicate answer.
       return unless claim_turn!
 
+      # If a previous turn left a question pending (unanswered), the member sending
+      # a new message means "move on": cancel that blocked run on term-llm and mark
+      # it skipped so its form clears.
+      superseded = supersede_pending_question!
+
       messages = build_messages
       return if messages.empty?
 
@@ -81,9 +86,13 @@ module ::SecondBrain
       # Show a breathing, self-narrating indicator until the answer starts.
       publish_cooked(placeholder, thinking_html(nil), done: false)
 
-      # A stable session id per chat lets a later request answer/resume an
-      # ask_user prompt (term-llm keys paused runs by session id).
-      session_id = "sb_#{@topic.id}"
+      # A stable session id per chat lets a later request answer/resume an ask_user
+      # prompt (term-llm keys paused runs by session id). But right after superseding
+      # a pending question the cancelled run is still wrapping up on that session, and
+      # term-llm rejects a concurrent run as "session busy" (streaming a conflict_error
+      # that would surface as an empty reply). Use a per-turn session id in that case
+      # so this turn runs cleanly on its own session — answer/resume within it works.
+      session_id = superseded ? "sb_#{@topic.id}_#{@post.id}" : "sb_#{@topic.id}"
       result =
         begin
           stream_and_paint(placeholder, "", []) do |on_update|
@@ -245,6 +254,48 @@ module ::SecondBrain
         PostCustomField.create!(post_id: @post.id, name: field, value: "t")
         true
       end
+    end
+
+    # A new message supersedes any still-pending ask_user question on this chat:
+    # cancel the blocked run on term-llm (best-effort) and mark the old question
+    # skipped so its form clears. Returns true if it superseded one (so the caller
+    # runs this turn on a fresh session, away from the still-finishing old run).
+    # Self-guarded — never breaks the new turn.
+    def supersede_pending_question!
+      pending =
+        @topic
+          .posts
+          .where(user_id: @agent.bot_user_id)
+          .where("posts.post_number < ?", @post.post_number)
+          .order(post_number: :desc)
+          .detect { |p| (parse_json(p.custom_fields[ASK_FIELD]) || {})["status"] == "pending" }
+      return false if pending.nil?
+
+      public_state = parse_json(pending.custom_fields[ASK_FIELD]) || {}
+      server_state = parse_json(pending.custom_fields[STATE_FIELD]) || {}
+
+      sid = server_state["session_id"]
+      cid = public_state["call_id"]
+      if sid.present? && cid.present?
+        begin
+          @agent.client.submit_ask_user(session_id: sid, call_id: cid, cancelled: true)
+        rescue TermLlmClient::Error => e
+          # Already gone/expired, or term-llm down — the run will time out anyway.
+          Rails.logger.warn("second-brain: superseding ask_user (post #{pending.id}): #{e.class}: #{e.message}")
+        end
+      end
+
+      public_state["status"] = "skipped"
+      public_state["skipped"] = true
+      pending.custom_fields[ASK_FIELD] = public_state.to_json
+      pending.custom_fields.delete(STATE_FIELD)
+      pending.save_custom_fields(true)
+      publish_askuser(pending, public_state)
+      pending.publish_change_to_clients!(:revised)
+      true
+    rescue => e
+      Rails.logger.warn("second-brain: supersede_pending_question! failed: #{e.class}: #{e.message}")
+      false
     end
 
     def monotonic

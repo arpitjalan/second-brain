@@ -347,4 +347,74 @@ describe SecondBrain::BotResponder do
       expect(JSON.parse(post.reload.custom_fields[described_class::ASK_FIELD])["status"]).to eq("answered")
     end
   end
+
+  # A new message while a prior question is still pending: cancel the blocked run,
+  # mark the old question skipped, and answer the new message on a fresh session
+  # (so term-llm doesn't reject it as "session busy" → empty reply).
+  describe "#respond! superseding a pending question" do
+    before do
+      topic.custom_fields["second_brain_titled"] = true
+      topic.save_custom_fields
+    end
+
+    let!(:pending_post) do
+      post = Fabricate(:post, topic: topic, user: bot)
+      post.custom_fields[described_class::ASK_FIELD] = {
+        "status" => "pending",
+        "call_id" => "c1",
+        "questions" => [{ "header" => "Q" }],
+      }.to_json
+      post.custom_fields[described_class::STATE_FIELD] = {
+        "session_id" => "sb_#{topic.id}",
+        "response_id" => "resp_old",
+        "last_seq" => 3,
+      }.to_json
+      post.save_custom_fields(true)
+      post
+    end
+
+    let!(:new_message) { Fabricate(:post, topic: topic, user: human) }
+
+    it "cancels the old run, skips the old question, and answers on a fresh session" do
+      stub_termllm_ask_user(session_id: "sb_#{topic.id}") # the cancel
+      stub_termllm_respond(body: sse_delta("Answer to the new message", seq: 1) + sse_done)
+
+      described_class.new(new_message).respond!
+
+      # Old question cancelled on term-llm and marked skipped.
+      expect(
+        a_request(:post, "http://termllm.test/chat/v1/sessions/sb_#{topic.id}/ask_user").with { |req|
+          JSON.parse(req.body)["cancelled"] == true
+        },
+      ).to have_been_made.once
+      expect(JSON.parse(pending_post.reload.custom_fields[described_class::ASK_FIELD])["status"]).to eq("skipped")
+      expect(pending_post.custom_fields[described_class::STATE_FIELD]).to be_nil
+
+      # New turn ran on a per-turn session id (not the busy "sb_<topic>").
+      expect(
+        a_request(:post, "http://termllm.test/chat/v1/responses").with(
+          headers: { "session_id" => "sb_#{topic.id}_#{new_message.id}" },
+        ),
+      ).to have_been_made.once
+
+      # And the new message got answered.
+      reply = topic.reload.posts.where(user_id: bot.id).order(:post_number).last
+      expect(reply.raw).to eq("Answer to the new message")
+    end
+
+    it "still answers (and uses the stable session) when no question is pending" do
+      pending_post.custom_fields[described_class::ASK_FIELD] = { "status" => "answered" }.to_json
+      pending_post.save_custom_fields(true)
+      stub_termllm_respond(body: sse_delta("Plain answer", seq: 1) + sse_done)
+
+      described_class.new(new_message).respond!
+
+      expect(WebMock).not_to have_requested(:post, %r{/v1/sessions/.*/ask_user})
+      expect(
+        a_request(:post, "http://termllm.test/chat/v1/responses").with(
+          headers: { "session_id" => "sb_#{topic.id}" },
+        ),
+      ).to have_been_made.once
+    end
+  end
 end
