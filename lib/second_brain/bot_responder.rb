@@ -43,6 +43,23 @@ module ::SecondBrain
       end
     end
 
+    # Push the current ask_user state to the chat's participants so live clients
+    # advance the inline form — collapse it to the answered summary, or render a
+    # fresh round — without waiting for a reload. The symmetric counterpart to the
+    # pause-time publish in #pause_for_ask_user: pause emits "pending", and this
+    # emits the terminal "answered"/"done" so the form never lingers. Called from
+    # the answer controller (the instant an answer lands) and from #resume! (when
+    # the resumed run finalizes).
+    def self.publish_askuser(post, public_state)
+      MessageBus.publish(
+        "/second-brain/askuser",
+        { post_id: post.id, askuser: public_state },
+        user_ids: post.topic.topic_allowed_users.pluck(:user_id),
+      )
+    rescue => e
+      Rails.logger.warn("second-brain: askuser publish failed: #{e.message}")
+    end
+
     def initialize(post)
       @post = post
       @topic = post.topic
@@ -179,6 +196,10 @@ module ::SecondBrain
       # (and can't confuse a stray future resume).
       @post.custom_fields.delete(STATE_FIELD)
       @post.save_custom_fields(true)
+      # Tell live clients the question reached a terminal state, so the inline
+      # form collapses to its answered summary instead of being re-painted from
+      # the now-stale "pending" field when the resumed post re-renders.
+      self.class.publish_askuser(@post, public_state)
       maybe_title!(build_messages)
     end
 
@@ -428,13 +449,7 @@ module ::SecondBrain
     end
 
     def publish_askuser(post, public_state)
-      MessageBus.publish(
-        "/second-brain/askuser",
-        { post_id: post.id, askuser: public_state },
-        user_ids: stream_user_ids,
-      )
-    rescue => e
-      Rails.logger.warn("second-brain: askuser publish failed: #{e.message}")
+      self.class.publish_askuser(post, public_state)
     end
 
     # Persist the final answer once and tell clients streaming is done.

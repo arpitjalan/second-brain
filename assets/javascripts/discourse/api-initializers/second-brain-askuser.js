@@ -259,11 +259,17 @@ function applyAskUser(element, post, data) {
   if (!element || !post || !data) {
     return;
   }
-  if (element.dataset.sbAskStatus === data.status) {
-    return; // already rendered for this status
+  // Key the idempotency check on call_id too, not status alone: a second
+  // question round and the first are both "pending" (with different call_ids),
+  // and the answered/done state shares the pending round's call_id. Keying on
+  // status alone would either suppress a fresh question or fail to collapse an
+  // already-answered form.
+  const sig = `${data.status}:${data.call_id ?? ""}`;
+  if (element.dataset.sbAskSig === sig) {
+    return; // already rendered for this prompt + status
   }
   element.querySelectorAll(":scope > .sb-askuser").forEach((n) => n.remove());
-  element.dataset.sbAskStatus = data.status;
+  element.dataset.sbAskSig = sig;
 
   // The agent's own display name (the bot user's full name, e.g. "Stan"/"Jarvis"),
   // so messages read with the right name in a personal-agent chat — not "stan".
