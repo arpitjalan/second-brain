@@ -36,7 +36,7 @@ function optionRow(question, name, opt, onChange) {
   return { label, input };
 }
 
-function renderForm(container, post, data) {
+function renderForm(container, post, data, botName) {
   const questions = data.questions || [];
   const answers = questions.map(() => ({ selected: null, custom: "", list: [] }));
 
@@ -208,15 +208,15 @@ function renderForm(container, post, data) {
       const sent = document.createElement("div");
       sent.className = "sb-askuser__sent";
       sent.textContent = cancelled
-        ? "Skipped — stan is continuing…"
-        : "Answers sent — stan is continuing…";
+        ? `Skipped — ${botName} is continuing…`
+        : `Answers sent — ${botName} is continuing…`;
       form.appendChild(sent);
     } catch (e) {
       submit.disabled = false;
       skip.disabled = false;
       submit.textContent = "Send answers";
       if (e?.jqXHR?.status === 410) {
-        error.textContent = "This question expired. Ask stan again to continue.";
+        error.textContent = `This question expired. Ask ${botName} again to continue.`;
       } else {
         popupAjaxError(e);
       }
@@ -245,10 +245,10 @@ function renderSummary(container, data) {
   container.appendChild(chip);
 }
 
-function renderExpired(container) {
+function renderExpired(container, botName) {
   const note = document.createElement("div");
   note.className = "sb-askuser__expired";
-  note.textContent = "This question expired. Ask stan again to continue.";
+  note.textContent = `This question expired. Ask ${botName} again to continue.`;
   container.appendChild(note);
 }
 
@@ -265,12 +265,15 @@ function applyAskUser(element, post, data) {
   element.querySelectorAll(":scope > .sb-askuser").forEach((n) => n.remove());
   element.dataset.sbAskStatus = data.status;
 
+  // The agent's own display name (the bot user's full name, e.g. "Stan"/"Jarvis"),
+  // so messages read with the right name in a personal-agent chat — not "stan".
+  const botName = post.name || post.username || "stan";
   const container = document.createElement("div");
   container.className = "sb-askuser";
   if (data.status === "pending") {
-    renderForm(container, post, data);
+    renderForm(container, post, data, botName);
   } else if (data.status === "expired") {
-    renderExpired(container);
+    renderExpired(container, botName);
   } else {
     renderSummary(container, data);
   }
