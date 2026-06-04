@@ -14,6 +14,6 @@ export default class SearchChatsRoute extends DiscourseRoute {
   }
 
   titleToken() {
-    return "Search your chats";
+    return "Search your AI chats";
   }
 }

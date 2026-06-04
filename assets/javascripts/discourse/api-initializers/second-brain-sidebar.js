@@ -8,8 +8,8 @@ export default apiInitializer((api) => {
     return class SearchChatsSectionLink extends baseSectionLink {
       name = "second-brain-search-chats";
       route = "search-chats";
-      text = "Search chats";
-      title = "Search your chats";
+      text = "Search AI chats";
+      title = "Search your AI chats";
       defaultPrefixValue = "magnifying-glass";
     };
   });

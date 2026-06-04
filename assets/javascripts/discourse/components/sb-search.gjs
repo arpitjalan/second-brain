@@ -73,8 +73,8 @@ export default class SbSearch extends Component {
       <input
         type="search"
         class="sb-search__input"
-        placeholder="Search your chats…"
-        aria-label="Search your chats"
+        placeholder="Search your AI chats…"
+        aria-label="Search your AI chats"
         value={{this.query}}
         {{didInsert this.focusInput}}
         {{on "input" this.update}}
