@@ -818,6 +818,49 @@ body.archetype-private_message {
   }
 }
 
+// Homepage "search your chats" field — between the prompt chips and the board.
+// A quiet utility: transparent fill + faint outline so it doesn't read as a third
+// input box competing with the composer; lifts to the accent ring on focus.
+// The dedicated "search your chats" page (sidebar link + subtle homepage link).
+.sb-search-page {
+  max-width: 720px;
+  margin: 48px auto 72px;
+  padding-inline: 16px;
+
+  &__title {
+    font-size: var(--font-up-3);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-bottom: 16px;
+  }
+}
+
+.sb-search {
+  margin: 8px 0 4px;
+
+  &__input {
+    width: 100%;
+    border: 1px solid var(--primary-low);
+    border-radius: 12px;
+    background: transparent;
+    color: var(--primary-high);
+    padding: 9px 14px;
+    transition:
+      border-color 0.18s ease,
+      box-shadow 0.18s ease;
+
+    &::placeholder {
+      color: var(--primary-medium);
+    }
+
+    &:focus {
+      outline: none;
+      border-color: var(--sb-accent);
+      box-shadow: 0 0 0 1px var(--sb-accent);
+    }
+  }
+}
+
 // =============================================================================
 // Homepage "living brain" board — recent chats + what the family shared.
 // =============================================================================
@@ -914,6 +957,49 @@ body.archetype-private_message {
     font-size: var(--font-down-2);
     color: var(--primary-medium);
   }
+}
+
+// Search results: one full-width column of cards (reuses .sb-board__card), with a
+// snippet line under each title. Placed after .sb-board so it wins on source order.
+// Recent-chats column heading row: the heading + a subtle "Search" link.
+.sb-board__col-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+
+  .sb-board__heading {
+    margin: 0;
+  }
+}
+
+.sb-board__search-link {
+  font-size: var(--font-down-1);
+  font-weight: normal;
+  color: var(--primary-medium);
+
+  &:hover {
+    color: var(--sb-accent);
+  }
+}
+
+.sb-board--search {
+  grid-template-columns: 1fr;
+}
+
+.sb-board__col--full {
+  grid-column: 1 / -1;
+}
+
+.sb-board__blurb {
+  display: -webkit-box;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--primary-medium);
+  font-size: var(--font-down-1);
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 // Board empty / error note.

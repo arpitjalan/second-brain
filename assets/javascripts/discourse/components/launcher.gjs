@@ -120,10 +120,6 @@ export default class Launcher extends Component {
     return STARTER_CHIPS;
   }
 
-  get myChatsUrl() {
-    return `/u/${this.currentUser.username}/messages`;
-  }
-
   get hasBoard() {
     return this.recent.length > 0 || this.interesting.length > 0;
   }
@@ -342,7 +338,6 @@ export default class Launcher extends Component {
                 @onAdd={{this.addAttachment}}
                 @disabled={{this.starting}}
               />
-              <a class="sb-starter__link" href={{this.myChatsUrl}}>Your chats</a>
               <span class="sb-starter__hint">Enter to send · Shift+Enter for newline</span>
             </span>
             <DButton
@@ -380,7 +375,10 @@ export default class Launcher extends Component {
         {{#if this.hasBoard}}
           <div class="sb-board">
             <div class="sb-board__col">
-              <h2 class="sb-board__heading">Your recent chats</h2>
+              <div class="sb-board__col-head">
+                <h2 class="sb-board__heading">Your recent chats</h2>
+                <a class="sb-board__search-link" href="/search-chats">Search</a>
+              </div>
               {{#if this.recent.length}}
                 {{#each this.recent as |card|}}
                   <a class="sb-board__card" href={{card.url}}>

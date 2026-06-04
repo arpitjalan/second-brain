@@ -31,6 +31,11 @@ plugins:
     default: 5
     min: 1
     max: 50
+  # How many results the "Search AI chats" page shows.
+  second_brain_search_results:
+    default: 8
+    min: 1
+    max: 50
   # Tell the bot it can act on this forum (needs the term-llm `discourse` skill
   # deployed + credentials configured on the term-llm server). Off until ready.
   second_brain_forum_actions_enabled:

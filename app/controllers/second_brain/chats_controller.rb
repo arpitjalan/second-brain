@@ -90,16 +90,18 @@ module ::SecondBrain
     # a column of interesting public topics worth a look.
     def home
       agent_ids = Agent.bot_user_ids
-      bot_ids_sql = agent_ids_sql(agent_ids)
       limit = SiteSetting.second_brain_board_topics
 
-      # The member's recent chats with any agent bot they participate in (the
-      # sb_me join keeps it to their own chats — personal agents stay private).
+      # The member's recent chats with an agent they may see: family chats they
+      # participate in + their OWN personal-agent chats. Scoping the bot set to
+      # available_to(current_user) (not every bot) keeps a personal-agent chat the
+      # member was merely invited into off their board — mirroring the owner-gate
+      # #answer enforces (being a PM participant isn't enough for a personal agent).
       recent =
         Topic
           .where(archetype: Archetype.private_message, deleted_at: nil)
           .joins("JOIN topic_allowed_users sb_me ON sb_me.topic_id = topics.id AND sb_me.user_id = #{current_user.id.to_i}")
-          .joins("JOIN topic_allowed_users sb_bot ON sb_bot.topic_id = topics.id AND sb_bot.user_id IN (#{bot_ids_sql})")
+          .joins("JOIN topic_allowed_users sb_bot ON sb_bot.topic_id = topics.id AND sb_bot.user_id IN (#{agent_ids_sql(my_agent_bot_ids)})")
           .includes(:user)
           .order(bumped_at: :desc)
           .limit(limit)
@@ -108,6 +110,50 @@ module ::SecondBrain
         recent: recent.map { |t| topic_card(t) },
         interesting: interesting_topics(agent_ids, limit).map { |t| topic_card(t) },
       }
+    end
+
+    # Full-text search over the member's OWN bot chats (PMs they participate in) +
+    # shared public chats. Privacy is structural: the candidate topic-id set is the
+    # exact owner/bot scope used by #home, so another member's private chats are
+    # never even searched; every hit is also re-gated through guardian.can_see?.
+    def search
+      query = params[:q].to_s.strip
+      return render json: { results: [] } if query.length < 2
+
+      ids = searchable_topic_ids
+      return render json: { results: [] } if ids.empty?
+
+      term = Search.prepare_data(query)
+      return render json: { results: [] } if term.blank?
+
+      limit = SiteSetting.second_brain_search_results
+
+      # `Search.ts_query` escapes/unaccents the term and returns a complete
+      # TO_TSQUERY(...) SQL fragment, so this is injection-safe; the topic_id bound
+      # keeps the @@ match tiny. Search bodies (question + answer) of regular,
+      # non-hidden, non-deleted posts only.
+      posts =
+        Post
+          .where(topic_id: ids, post_type: Post.types[:regular], hidden: false, deleted_at: nil)
+          .joins("JOIN post_search_data psd ON psd.post_id = posts.id")
+          .joins(:topic)
+          .where("psd.search_data @@ #{Search.ts_query(term: term)}")
+          .preload(topic: :user)
+          .order("topics.bumped_at DESC, posts.post_number ASC")
+          .limit(limit * 3)
+
+      seen = Set.new
+      results = []
+      posts.each do |post|
+        topic = post.topic
+        next if topic.nil? || seen.include?(topic.id)
+        next unless guardian.can_see?(topic)
+        seen << topic.id
+        results << search_card(post, topic, query)
+        break if results.size >= limit
+      end
+
+      render json: { results: results }
     end
 
     # Answer a pending ask_user prompt from the bot. We submit the answers to
@@ -186,6 +232,49 @@ module ::SecondBrain
       raise Discourse::InvalidParameters, :agent if agent.nil?
       raise Discourse::InvalidAccess unless agent.shared? || agent.owner_user_id == current_user.id
       agent
+    end
+
+    # The topics #search may look in: the caller's own bot PMs (the exact sb_me/
+    # sb_bot scope from #home — sb_me restricts to PMs the caller participates in,
+    # sb_bot to bot chats) + public chats shared to the family. uniq'd id list.
+    def searchable_topic_ids
+      bot_ids_sql = agent_ids_sql(my_agent_bot_ids)
+      me = current_user.id.to_i
+
+      pm_ids =
+        Topic
+          .where(archetype: Archetype.private_message, deleted_at: nil)
+          .joins("JOIN topic_allowed_users sb_me ON sb_me.topic_id = topics.id AND sb_me.user_id = #{me}")
+          .joins("JOIN topic_allowed_users sb_bot ON sb_bot.topic_id = topics.id AND sb_bot.user_id IN (#{bot_ids_sql})")
+          .pluck(:id)
+
+      public_ids =
+        Topic
+          .where(archetype: Archetype.default, deleted_at: nil, visible: true)
+          .joins(
+            "JOIN topic_custom_fields sb ON sb.topic_id = topics.id AND sb.name = 'second_brain_shared'",
+          )
+          .pluck(:id)
+
+      (pm_ids + public_ids).uniq
+    end
+
+    def search_card(post, topic, query)
+      {
+        title: topic.title,
+        url: "#{topic.relative_url}/#{post.post_number}",
+        username: topic.user&.username,
+        blurb: Search::GroupedSearchResults.blurb_for(cooked: post.cooked, term: query),
+        age: short_age(topic.bumped_at),
+      }
+    end
+
+    # Bot user ids whose chats this member may see/search: the shared family agent
+    # + the member's OWN personal agents. Excludes other members' personal bots, so
+    # a non-owner merely invited into a personal-agent PM can't see or search it
+    # (the owner-privacy invariant #answer enforces, applied to listing/search).
+    def my_agent_bot_ids
+      Agent.available_to(current_user).filter_map { |a| a.user&.id }
     end
 
     # A safe `IN (...)` list of agent bot user ids (ints; never empty).
