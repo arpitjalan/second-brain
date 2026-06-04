@@ -819,7 +819,8 @@ body.archetype-private_message {
 }
 
 // Homepage "search your chats" field — between the prompt chips and the board.
-// Matches the composer's rounded card + accent focus ring.
+// A quiet utility: transparent fill + faint outline so it doesn't read as a third
+// input box competing with the composer; lifts to the accent ring on focus.
 .sb-search {
   margin: 8px 0 4px;
 
@@ -827,9 +828,9 @@ body.archetype-private_message {
     width: 100%;
     border: 1px solid var(--primary-low);
     border-radius: 12px;
-    background: var(--secondary);
+    background: transparent;
     color: var(--primary-high);
-    padding: 10px 14px;
+    padding: 9px 14px;
     transition:
       border-color 0.18s ease,
       box-shadow 0.18s ease;
@@ -840,8 +841,8 @@ body.archetype-private_message {
 
     &:focus {
       outline: none;
-      border-color: transparent;
-      box-shadow: 0 0 0 2px var(--sb-accent);
+      border-color: var(--sb-accent);
+      box-shadow: 0 0 0 1px var(--sb-accent);
     }
   }
 }

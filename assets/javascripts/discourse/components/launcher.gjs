@@ -126,10 +126,6 @@ export default class Launcher extends Component {
     return STARTER_CHIPS;
   }
 
-  get myChatsUrl() {
-    return `/u/${this.currentUser.username}/messages`;
-  }
-
   get hasBoard() {
     return this.recent.length > 0 || this.interesting.length > 0;
   }
@@ -397,7 +393,6 @@ export default class Launcher extends Component {
                 @onAdd={{this.addAttachment}}
                 @disabled={{this.starting}}
               />
-              <a class="sb-starter__link" href={{this.myChatsUrl}}>Your chats</a>
               <span class="sb-starter__hint">Enter to send · Shift+Enter for newline</span>
             </span>
             <DButton
