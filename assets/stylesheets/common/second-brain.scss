@@ -821,6 +821,20 @@ body.archetype-private_message {
 // Homepage "search your chats" field — between the prompt chips and the board.
 // A quiet utility: transparent fill + faint outline so it doesn't read as a third
 // input box competing with the composer; lifts to the accent ring on focus.
+// The dedicated "search your chats" page (sidebar link + subtle homepage link).
+.sb-search-page {
+  max-width: 720px;
+  margin: 48px auto 72px;
+  padding-inline: 16px;
+
+  &__title {
+    font-size: var(--font-up-3);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-bottom: 16px;
+  }
+}
+
 .sb-search {
   margin: 8px 0 4px;
 
@@ -947,6 +961,28 @@ body.archetype-private_message {
 
 // Search results: one full-width column of cards (reuses .sb-board__card), with a
 // snippet line under each title. Placed after .sb-board so it wins on source order.
+// Recent-chats column heading row: the heading + a subtle "Search" link.
+.sb-board__col-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+
+  .sb-board__heading {
+    margin: 0;
+  }
+}
+
+.sb-board__search-link {
+  font-size: var(--font-down-1);
+  font-weight: normal;
+  color: var(--primary-medium);
+
+  &:hover {
+    color: var(--sb-accent);
+  }
+}
+
 .sb-board--search {
   grid-template-columns: 1fr;
 }

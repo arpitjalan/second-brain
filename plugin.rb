@@ -20,6 +20,7 @@ register_svg_icon "copy"
 register_svg_icon "check"
 register_svg_icon "paperclip"
 register_svg_icon "xmark"
+register_svg_icon "magnifying-glass"
 
 # Take over the homepage from the plugin itself — no separate theme needed.
 # HomepageHelper#resolve returns "custom" when this modifier is truthy, routing
