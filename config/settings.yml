@@ -31,7 +31,7 @@ plugins:
     default: 5
     min: 1
     max: 50
-  # How many results the homepage "search your chats" box shows.
+  # How many results the "Search AI chats" page shows.
   second_brain_search_results:
     default: 8
     min: 1
