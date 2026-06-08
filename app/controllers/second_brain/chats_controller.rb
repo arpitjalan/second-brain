@@ -86,36 +86,11 @@ module ::SecondBrain
       render json: { agents: list }
     end
 
-    # Homepage "living brain" board: the member's recent chats with the bot, and
-    # a column of interesting public topics worth a look.
-    def home
-      agent_ids = Agent.bot_user_ids
-      limit = SiteSetting.second_brain_board_topics
-
-      # The member's recent chats with an agent they may see: family chats they
-      # participate in + their OWN personal-agent chats. Scoping the bot set to
-      # available_to(current_user) (not every bot) keeps a personal-agent chat the
-      # member was merely invited into off their board — mirroring the owner-gate
-      # #answer enforces (being a PM participant isn't enough for a personal agent).
-      recent =
-        Topic
-          .where(archetype: Archetype.private_message, deleted_at: nil)
-          .joins("JOIN topic_allowed_users sb_me ON sb_me.topic_id = topics.id AND sb_me.user_id = #{current_user.id.to_i}")
-          .joins("JOIN topic_allowed_users sb_bot ON sb_bot.topic_id = topics.id AND sb_bot.user_id IN (#{agent_ids_sql(my_agent_bot_ids)})")
-          .includes(:user)
-          .order(bumped_at: :desc)
-          .limit(limit)
-
-      render json: {
-        recent: recent.map { |t| topic_card(t) },
-        interesting: interesting_topics(agent_ids, limit).map { |t| topic_card(t) },
-      }
-    end
-
     # Full-text search over the member's OWN bot chats (PMs they participate in) +
-    # shared public chats. Privacy is structural: the candidate topic-id set is the
-    # exact owner/bot scope used by #home, so another member's private chats are
-    # never even searched; every hit is also re-gated through guardian.can_see?.
+    # shared public chats. Privacy is structural: #searchable_topic_ids restricts the
+    # candidate set to the caller's own owner/bot scope, so another member's private
+    # chats are never even searched; every hit is also re-gated through
+    # guardian.can_see?.
     def search
       query = params[:q].to_s.strip
       return render json: { results: [] } if query.length < 2
@@ -240,9 +215,9 @@ module ::SecondBrain
       agent
     end
 
-    # The topics #search may look in: the caller's own bot PMs (the exact sb_me/
-    # sb_bot scope from #home — sb_me restricts to PMs the caller participates in,
-    # sb_bot to bot chats) + public chats shared to the family. uniq'd id list.
+    # The topics #search may look in: the caller's own bot PMs (sb_me restricts to
+    # PMs the caller participates in, sb_bot to bot chats) + public chats shared to
+    # the family. uniq'd id list.
     def searchable_topic_ids
       bot_ids_sql = agent_ids_sql(my_agent_bot_ids)
       me = current_user.id.to_i
@@ -290,64 +265,13 @@ module ::SecondBrain
       list.join(",")
     end
 
-    # The homepage's right column: public topics worth a look, prioritized
-    # shared (published bot chats) → agent-created → hot/recently-active, deduped
-    # and capped at `limit`. The last tier is a never-empty fallback. Only topics
-    # the member can see are included.
-    def interesting_topics(agent_ids, limit)
-      picked = []
-      seen = Set.new
-
-      gather =
-        lambda do |scope|
-          scope.each do |topic|
-            break if picked.size >= limit
-            next if seen.include?(topic.id) || !guardian.can_see?(topic)
-            seen << topic.id
-            picked << topic
-          end
-        end
-
-      public_topics =
-        Topic.where(archetype: Archetype.default, deleted_at: nil, visible: true).includes(:user)
-
-      # 1) Published "shared" chats.
-      gather.call(
-        public_topics
-          .joins("JOIN topic_custom_fields sb ON sb.topic_id = topics.id AND sb.name = 'second_brain_shared'")
-          .order(bumped_at: :desc)
-          .limit(limit),
-      )
-
-      # 2) Topics any agent created on the forum.
-      if picked.size < limit
-        gather.call(public_topics.where(user_id: agent_ids).order(created_at: :desc).limit(limit))
-      end
-
-      # 3) Hot / recently-active topics — the fallback so the column is never empty.
-      if picked.size < limit
-        gather.call(public_topics.order(bumped_at: :desc).limit(limit * 3))
-      end
-
-      picked
-    end
-
     def derive_title(message)
       line = message.lines.first.to_s.strip
       line = "New chat" if line.blank?
       line.truncate(80)
     end
 
-    def topic_card(topic)
-      {
-        title: topic.title,
-        url: topic.relative_url,
-        username: topic.user&.username,
-        age: short_age(topic.bumped_at),
-      }
-    end
-
-    # Compact relative age ("2m", "3h", "5d", "2w") for the homepage cards.
+    # Compact relative age ("2m", "3h", "5d", "2w") for the search result cards.
     def short_age(time)
       return "" if time.nil?
       secs = (Time.now - time).to_i

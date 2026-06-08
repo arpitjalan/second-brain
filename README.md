@@ -10,8 +10,7 @@ its face, its private container, and the knowledge base it can act on.
 
 ## What you get
 
-- **A calm AI homepage** — a "Message stan…" launcher with starter prompts and a
-  *living-brain board* (your recent chats + what the family has shared), with the
+- **A calm AI homepage** — a "Message stan…" launcher with starter prompts, with the
   forum chrome stripped away and a modern signature look.
 - **Streaming chat** — each chat is a Discourse PM with the bot; replies stream in
   with a self-narrating "Searching the web…" indicator and a collapsible tool-call
@@ -126,7 +125,6 @@ prompt to see the interactive question form.
 | `second_brain_term_llm_model` | Optional; blank = term-llm's default |
 | `second_brain_stream_idle_timeout` | Abort a streaming reply after this many seconds of silence from term-llm, freeing the worker (default 300). Keep it above the longest a single tool runs silently. |
 | `second_brain_bot_username` | The assistant's account username (default `stan`) |
-| `second_brain_board_topics` | Topics per homepage board column — recent chats + interesting (default 5) |
 | `second_brain_public_category` | Category "Make public" posts into; blank = auto-pick |
 | `second_brain_forum_actions_enabled` | Let the bot act on the forum (needs the `discourse` skill + creds on stan) |
 

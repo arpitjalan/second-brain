@@ -862,7 +862,7 @@ body.archetype-private_message {
 }
 
 // =============================================================================
-// Homepage "living brain" board — recent chats + what the family shared.
+// Card board — the layout shared by the "Search AI chats" results page.
 // =============================================================================
 .sb-board {
   display: grid;
@@ -873,15 +873,6 @@ body.archetype-private_message {
 
   &__col {
     min-width: 0;
-  }
-
-  &__heading {
-    font-size: var(--font-down-1);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--primary-medium);
-    margin: 0 0 10px;
   }
 
   &__card {
@@ -934,55 +925,10 @@ body.archetype-private_message {
     font-size: var(--font-down-2);
     color: var(--primary-medium);
   }
-
-  // First-run placeholder in the "Your recent chats" column, so the two-column
-  // grid stays balanced before the member has any chats (instead of the lone
-  // "Interesting topics" column drifting to one side).
-  &__empty {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 16px;
-    border-radius: 12px;
-    border: 1px dashed var(--primary-low-mid);
-    background: transparent;
-  }
-
-  &__empty-title {
-    font-weight: 500;
-    color: var(--primary-medium);
-  }
-
-  &__empty-text {
-    font-size: var(--font-down-2);
-    color: var(--primary-medium);
-  }
 }
 
 // Search results: one full-width column of cards (reuses .sb-board__card), with a
 // snippet line under each title. Placed after .sb-board so it wins on source order.
-// Recent-chats column heading row: the heading + a subtle "Search" link.
-.sb-board__col-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 10px;
-
-  .sb-board__heading {
-    margin: 0;
-  }
-}
-
-.sb-board__search-link {
-  font-size: var(--font-down-1);
-  font-weight: normal;
-  color: var(--primary-medium);
-
-  &:hover {
-    color: var(--sb-accent);
-  }
-}
-
 .sb-board--search {
   grid-template-columns: 1fr;
 }

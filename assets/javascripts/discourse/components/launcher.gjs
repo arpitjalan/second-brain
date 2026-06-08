@@ -69,10 +69,6 @@ export default class Launcher extends Component {
 
   @tracked message = "";
   @tracked starting = false;
-  @tracked recent = [];
-  @tracked interesting = [];
-  @tracked boardLoaded = false;
-  @tracked boardError = false;
   @tracked attachments = [];
   @tracked agents = [];
   @tracked selectedAgent = null;
@@ -118,34 +114,6 @@ export default class Launcher extends Component {
 
   get chips() {
     return STARTER_CHIPS;
-  }
-
-  get hasBoard() {
-    return this.recent.length > 0 || this.interesting.length > 0;
-  }
-
-  // First-run nudge: loaded fine, signed in, but nothing to show yet.
-  get showEmptyState() {
-    return this.boardLoaded && !this.boardError && !this.hasBoard;
-  }
-
-  // The "living brain" board: my recent chats + interesting public topics.
-  @action
-  async loadBoard() {
-    if (!this.currentUser) {
-      return;
-    }
-    try {
-      const data = await ajax("/second-brain/home");
-      this.recent = data.recent || [];
-      this.interesting = data.interesting || [];
-      this.boardError = false;
-    } catch {
-      // Don't silently vanish — tell the user it failed (vs. genuinely empty).
-      this.boardError = true;
-    } finally {
-      this.boardLoaded = true;
-    }
   }
 
   // The agents this member may chat with (family + their own). Defaults the
@@ -264,11 +232,7 @@ export default class Launcher extends Component {
   }
 
   <template>
-    <div
-      class="sb-launcher"
-      {{didInsert this.loadBoard}}
-      {{didInsert this.loadAgents}}
-    >
+    <div class="sb-launcher" {{didInsert this.loadAgents}}>
       <h1 class="sb-launcher__title">
         {{#if this.currentUser}}{{this.greeting}}{{else}}Your second brain{{/if}}
       </h1>
@@ -338,7 +302,8 @@ export default class Launcher extends Component {
                 @onAdd={{this.addAttachment}}
                 @disabled={{this.starting}}
               />
-              <span class="sb-starter__hint">Enter to send · Shift+Enter for newline</span>
+              <span class="sb-starter__hint">Enter to send · Shift+Enter for
+                newline</span>
             </span>
             <DButton
               @action={{this.start}}
@@ -361,55 +326,6 @@ export default class Launcher extends Component {
             </button>
           {{/each}}
         </div>
-
-        {{#if this.boardError}}
-          <p class="sb-board__note">
-            Couldn't load your chats — refresh to retry.
-          </p>
-        {{else if this.showEmptyState}}
-          <p class="sb-board__note">
-            Your chats will show up here once you start one.
-          </p>
-        {{/if}}
-
-        {{#if this.hasBoard}}
-          <div class="sb-board">
-            <div class="sb-board__col">
-              <div class="sb-board__col-head">
-                <h2 class="sb-board__heading">Your recent chats</h2>
-                <a class="sb-board__search-link" href="/search-chats">Search</a>
-              </div>
-              {{#if this.recent.length}}
-                {{#each this.recent as |card|}}
-                  <a class="sb-board__card" href={{card.url}}>
-                    <span class="sb-board__title">{{card.title}}</span>
-                    <span class="sb-board__meta">{{card.age}}</span>
-                  </a>
-                {{/each}}
-              {{else}}
-                <div class="sb-board__empty">
-                  <span class="sb-board__empty-title">No chats yet</span>
-                  <span class="sb-board__empty-text">
-                    Start one above and it'll show up here.
-                  </span>
-                </div>
-              {{/if}}
-            </div>
-            {{#if this.interesting.length}}
-              <div class="sb-board__col">
-                <h2 class="sb-board__heading">Interesting topics</h2>
-                {{#each this.interesting as |card|}}
-                  <a class="sb-board__card" href={{card.url}}>
-                    <span class="sb-board__title">{{card.title}}</span>
-                    <span class="sb-board__meta">{{card.username}}
-                      ·
-                      {{card.age}}</span>
-                  </a>
-                {{/each}}
-              </div>
-            {{/if}}
-          </div>
-        {{/if}}
       {{/if}}
     </div>
   </template>

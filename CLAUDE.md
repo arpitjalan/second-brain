@@ -4,8 +4,8 @@ A Discourse plugin that makes **Discourse the UI for a `term-llm` bot** ("stan")
 a private, invite-only knowledge base + AI workspace for a small family. Chats are
 Discourse PMs with the bot; the bot streams answers, runs tools/web search, embeds
 widgets, can pause to ask **interactive questions** (`ask_user`), and can act on the
-forum (create topics, reply, search). The homepage is a calm launcher + a board of
-recent/shared chats, with a modern signature look.
+forum (create topics, reply, search). The homepage is a calm launcher with a modern
+signature look.
 
 Start here: **README.md**. Deeper docs: `docs/architecture.md` (how it works),
 `docs/local-dev.md` (setup + troubleshooting), `docs/ask-user.md` (interactive

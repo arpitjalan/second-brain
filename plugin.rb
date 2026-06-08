@@ -72,8 +72,6 @@ after_initialize do
   ) { JSON.parse(post_custom_fields["second_brain_askuser"]) rescue nil }
 
   Discourse::Application.routes.append do
-    # Homepage board: the member's recent chats + what the family shared.
-    get "/second-brain/home" => "second_brain/chats#home"
     # Search the member's own bot chats (+ shared public chats).
     get "/second-brain/search" => "second_brain/chats#search"
     # The agents this member may chat with (family + their own) — for the switcher.
