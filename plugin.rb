@@ -56,7 +56,8 @@ after_initialize do
   register_post_custom_field_type("second_brain_askuser", :string)
   register_post_custom_field_type("second_brain_askuser_state", :string)
 
-  # Marks a chat that's been published to the family (for the homepage board).
+  # Marks a chat that's been published to the family (scopes the shared-chat
+  # results in ChatsController#search).
   register_topic_custom_field_type("second_brain_shared", :boolean)
 
   # Expose only the public ask_user field to the client (preloaded in topic

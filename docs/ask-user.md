@@ -62,7 +62,7 @@ session-keyed, not connection-bound.
 term-llm itself will accept the answer from any process; Discourse adds the access
 rule. For the **family/shared** agent, any chat participant may answer. For a
 **personal** (owner-private) agent, the `/second-brain/answer` controller restricts
-answering to the agent's owner (or staff) — being a PM participant isn't enough.
+answering to the agent's owner — being a PM participant (even staff) isn't enough.
 
 ```
 ASK    job → POST /v1/responses (header session_id=sb_<topic_id>_<post_id>), stream

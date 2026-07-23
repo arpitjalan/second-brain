@@ -57,7 +57,7 @@ module ::SecondBrain
       category_id = SiteSetting.second_brain_public_category.presence&.to_i
 
       # Convert + mark-shared together so we never end up public-but-unmarked
-      # (invisible to the homepage "Shared by the family" board).
+      # (invisible to the shared-chat results in #search).
       Topic.transaction do
         topic.convert_to_public_topic(Discourse.system_user, category_id: category_id)
         topic.reload

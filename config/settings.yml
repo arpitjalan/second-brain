@@ -3,9 +3,10 @@ plugins:
     default: true
     client: true
   # --- term-llm connection (the brain) ---
+  # Server-only: the plugin calls term-llm from Ruby; no client code reads this.
+  # Not client-exposed, so the private endpoint isn't disclosed to every visitor.
   second_brain_term_llm_url:
     default: ""
-    client: true
   second_brain_term_llm_api_key:
     default: ""
     secret: true
@@ -22,10 +23,10 @@ plugins:
   second_brain_bot_username:
     default: "stan"
     client: true
+  # Server-only: consumed by ChatsController#make_public; no client code reads it.
   second_brain_public_category:
     default: ""
     type: category
-    client: true
   # How many results the "Search AI chats" page shows.
   second_brain_search_results:
     default: 8

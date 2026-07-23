@@ -182,7 +182,7 @@ Verified findings that were deferred for design/tests — now done:
   + idempotent `resume!` (`claim_resume!`) + error-surfacing reply job
   (`abort_with_failure!`).
 
-Plugin suite is now **69 examples**.
+Plugin suite: `bin/rspec plugins/second-brain/spec` (run from the Discourse checkout).
 
 The original sweep: 45 findings → 33 real → 19 low-hanging, all fixed as of commit
 `7eceff3`.
