@@ -48,7 +48,7 @@ module ::SecondBrain
       raise Discourse::NotFound if base_url.blank?
 
       path = params[:path].to_s
-      raise Discourse::InvalidParameters, :path if path.include?("..")
+      validate_widget_path!(path)
 
       # Don't let dev mini-profiler inject its badge/script into the widget HTML.
       Rack::MiniProfiler.deauthorize_request if defined?(Rack::MiniProfiler)
@@ -63,6 +63,7 @@ module ::SecondBrain
           method: request.request_method.downcase.to_sym,
           body: request.raw_post.presence,
           content_type: request.media_type,
+          allowed_path_prefix: widgets_base_path(base_url),
         )
 
       content_type = upstream["content-type"].presence || "application/octet-stream"
@@ -85,6 +86,32 @@ module ::SecondBrain
     end
 
     private
+
+    # Reject any attempt to walk out of the widgets subtree. A single
+    # `path.include?("..")` guard is NOT enough: Rails decodes the glob param once,
+    # so a double-encoded `%252e%252e` arrives here as the literal `%2e%2e` (which
+    # contains no ".."), passes, and is forwarded verbatim. term-llm's Go ServeMux
+    # then decodes it to ".." and 301-redirects OUT of /widgets/ onto its privileged
+    # API — a redirect we'd follow with the agent's Bearer token. So we fully decode
+    # the path (repeatedly, to catch any nesting) and reject a ".." at ANY level.
+    # The original, still-encoded `path` is what gets forwarded — this only validates.
+    def validate_widget_path!(path)
+      probe = path.to_s
+      10.times do
+        raise Discourse::InvalidParameters, :path if probe.include?("..")
+        decoded = CGI.unescape(probe)
+        break if decoded == probe
+        probe = decoded
+      end
+      raise Discourse::InvalidParameters, :path if probe.include?("..")
+    end
+
+    # The path prefix every proxied request/redirect for this agent must stay under,
+    # e.g. base_url "http://host/chat" → "/chat/widgets/". Used to keep redirect hops
+    # inside the widget subtree (see fetch_following_redirects).
+    def widgets_base_path(base_url)
+      "#{URI.parse(base_url).path.to_s.sub(%r{/+\z}, "")}/widgets/"
+    end
 
     # Which agent's widgets this request is for. The agent-scoped route carries an
     # <agent> segment (access-checked); the legacy route (no segment) = family.
@@ -185,7 +212,8 @@ module ::SecondBrain
       body: nil,
       content_type: nil,
       open_timeout: 10,
-      read_timeout: 30
+      read_timeout: 30,
+      allowed_path_prefix: nil
     )
       key = agent.token
       allowed_origin = [uri.scheme, uri.host, uri.port]
@@ -193,6 +221,14 @@ module ::SecondBrain
 
       5.times do
         raise Discourse::InvalidAccess if [uri.scheme, uri.host, uri.port] != allowed_origin
+        # Keep every hop inside the widgets subtree (defense in depth: the inbound
+        # path is already validated, but a redirect must not walk us out of
+        # /widgets/ and onto term-llm's privileged API with the Bearer token). Only
+        # enforced for the widget proxy (#show passes a prefix); the fixed internal
+        # status URL used by #index passes none.
+        if allowed_path_prefix && !path_within_widgets?(uri.path, allowed_path_prefix)
+          raise Discourse::InvalidAccess
+        end
 
         http = Net::HTTP.new(uri.host, uri.port)
         http.use_ssl = uri.scheme == "https"
@@ -215,6 +251,20 @@ module ::SecondBrain
       end
 
       raise Discourse::InvalidParameters, :path # too many redirects
+    end
+
+    # True only if `path` (fully decoded, to catch encoded escapes) stays under the
+    # widgets subtree and contains no ".." segment. term-llm's legitimate redirects
+    # (trailing-slash normalization → "/chat/widgets/<mount>/") pass; a redirect onto
+    # its API (e.g. "/chat/v1/sessions") does not.
+    def path_within_widgets?(path, prefix)
+      probe = path.to_s
+      10.times do
+        decoded = CGI.unescape(probe)
+        break if decoded == probe
+        probe = decoded
+      end
+      probe.start_with?(prefix) && !probe.include?("..")
     end
   end
 end

@@ -8,8 +8,34 @@ import { iconHTML } from "discourse/lib/icon-library";
 // drop a framed widget card next to them — in the DOM (not the cooked HTML), so
 // the sanitizer doesn't strip it.
 const WIDGET_PREFIX_RE = /\/second-brain\/(?:agent-widgets\/[^/]+|widgets)\//;
+// Anchored: the pathname must START with our proxy prefix — not merely contain it.
+const WIDGET_PATH_RE = /^\/second-brain\/(?:agent-widgets\/[^/]+|widgets)\//;
 const WIDGET_LINK_SELECTOR =
   'a[href*="/second-brain/widgets/"], a[href*="/second-brain/agent-widgets/"]';
+
+// Return the same-origin widget-proxy path (pathname + query) to frame, or null if
+// this link is not genuinely one of ours. The selector matches on a substring, so a
+// link to another host that merely CONTAINS "/second-brain/widgets/" (anywhere in
+// its path or query — e.g. https://evil.example/second-brain/widgets/login, or
+// /latest?x=/second-brain/widgets/) would otherwise be framed as a trusted
+// first-party widget under allow-scripts/allow-same-origin/allow-forms. Require the
+// same origin AND a pathname that actually starts with our proxy prefix, and frame
+// the resolved path — never the raw href (which could point off-origin).
+function safeWidgetPath(link) {
+  let url;
+  try {
+    url = new URL(link.getAttribute("href"), window.location.origin);
+  } catch {
+    return null;
+  }
+  if (url.origin !== window.location.origin) {
+    return null;
+  }
+  if (!WIDGET_PATH_RE.test(url.pathname)) {
+    return null;
+  }
+  return url.pathname + url.search;
+}
 
 // "/second-brain/widgets/hacker-news-top/" -> "Hacker News Top"
 function widgetTitle(href) {
@@ -139,8 +165,12 @@ export default apiInitializer((api) => {
           if (link.dataset.sbWidget) {
             return;
           }
+          const src = safeWidgetPath(link);
+          if (!src) {
+            return;
+          }
           link.dataset.sbWidget = "1";
-          link.insertAdjacentElement("afterend", buildCard(link.href));
+          link.insertAdjacentElement("afterend", buildCard(src));
         });
     },
     { id: "second-brain-widgets" }

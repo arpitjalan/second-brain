@@ -91,6 +91,45 @@ describe SecondBrain::WidgetsController do
       expect(response.status).to eq(404)
     end
 
+    it "rejects a single-encoded ../ traversal without hitting term-llm" do
+      escape = stub_request(:get, "http://personal.test/chat/v1/sessions")
+      sign_in(owner)
+      get "/second-brain/agent-widgets/stan_arpit/%2e%2e/v1/sessions"
+      expect(response.status).to eq(400)
+      expect(escape).not_to have_been_requested
+    end
+
+    it "rejects a DOUBLE-encoded traversal that survives Rails' single decode" do
+      # `%252e%252e` reaches the controller as the literal `%2e%2e` (no ".."), so the
+      # old `path.include?("..")` guard passed it; term-llm would then decode it to
+      # ".." and 301 out of /widgets/ onto its API. Must be rejected before any fetch.
+      escape = stub_request(:get, "http://personal.test/chat/v1/sessions")
+      sign_in(owner)
+      get "/second-brain/agent-widgets/stan_arpit/%252e%252e/v1/sessions"
+      expect(response.status).to eq(400)
+      expect(escape).not_to have_been_requested
+    end
+
+    it "does NOT follow a redirect that escapes the /widgets/ subtree (defense in depth)" do
+      # Even if some path slipped through, a redirect off /widgets/ must not be
+      # followed with the Bearer token onto term-llm's privileged endpoints.
+      stub_request(:get, "http://personal.test/chat/widgets/evil").to_return(
+        status: 301,
+        headers: { "Location" => "http://personal.test/chat/v1/sessions" },
+      )
+      escape =
+        stub_request(:get, "http://personal.test/chat/v1/sessions").to_return(
+          status: 200,
+          body: "SECRET",
+        )
+
+      sign_in(owner)
+      get "/second-brain/agent-widgets/stan_arpit/evil"
+      expect(response.status).to eq(403)
+      expect(response.body).not_to include("SECRET")
+      expect(escape).not_to have_been_requested
+    end
+
     it "forwards a widget's write (POST body + content-type) upstream with the agent's token" do
       # Interactive widgets (e.g. movie-night-picker's "Add") POST to their backend;
       # the proxy must carry the method, body, and content-type to term-llm — not just GET.
