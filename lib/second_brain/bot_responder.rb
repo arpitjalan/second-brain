@@ -120,8 +120,13 @@ module ::SecondBrain
       session_id = "sb_#{@topic.id}_#{@post.id}"
       result =
         begin
-          stream_and_paint(placeholder, "", []) do |on_update|
-            @agent.client.stream_respond(messages, session_id: session_id, &on_update)
+          stream_and_paint(placeholder, "", []) do |on_update, heartbeat|
+            @agent.client.stream_respond(
+              messages,
+              session_id: session_id,
+              heartbeat: heartbeat,
+              &on_update
+            )
           end
         rescue TermLlmClient::Error => e
           Rails.logger.warn("second-brain: reply failed: #{e.message}")
@@ -162,8 +167,13 @@ module ::SecondBrain
       error = nil
       result =
         begin
-          stream_and_paint(@post, pre_text, pre_tools) do |on_update|
-            @agent.client.stream_events(response_id: response_id, after: after, &on_update)
+          stream_and_paint(@post, pre_text, pre_tools) do |on_update, heartbeat|
+            @agent.client.stream_events(
+              response_id: response_id,
+              after: after,
+              heartbeat: heartbeat,
+              &on_update
+            )
           end
         rescue TermLlmClient::Error => e
           Rails.logger.warn("second-brain: resume failed: #{e.class}: #{e.message}")
@@ -362,15 +372,26 @@ module ::SecondBrain
       # created much earlier by the chat controller), then heartbeat periodically.
       touch_alive(post)
       last_alive = monotonic
-      on_update =
-        proc do |text, tools|
-          full_text = seed_text.to_s + text.to_s
-          all_tools = seed_tools + tools
+
+      # Keep the post's updated_at fresh (throttled to ALIVE_INTERVAL) so the
+      # watchdog treats the turn as alive. Passed to the client so it fires on EVERY
+      # SSE chunk — including bare keepalive pings during a silent tool run, which
+      # produce no on_update — and also reused by on_update below.
+      heartbeat =
+        proc do
           now = monotonic
           if now - last_alive >= ALIVE_INTERVAL
             touch_alive(post)
             last_alive = now
           end
+        end
+
+      on_update =
+        proc do |text, tools|
+          full_text = seed_text.to_s + text.to_s
+          all_tools = seed_tools + tools
+          heartbeat.call
+          now = monotonic
           tool_sig = all_tools.map { |t| [t[:name], t[:done]] }
           if tool_sig != last_tool_sig || now - last_update >= STREAM_THROTTLE
             if full_text.strip.present?
@@ -385,7 +406,7 @@ module ::SecondBrain
             last_tool_sig = tool_sig
           end
         end
-      yield on_update
+      yield on_update, heartbeat
     end
 
     # Either pause for an ask_user prompt or finalize the reply + title the chat.

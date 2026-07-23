@@ -12,9 +12,10 @@ plugins:
     secret: true
   second_brain_term_llm_model:
     default: ""
-  # Abort a streaming reply after this many seconds of total silence from term-llm
-  # (no text or tool events), freeing the Sidekiq worker instead of holding it.
-  # Keep it above the longest your bot can run a single tool silently.
+  # Abort a streaming reply after this many seconds with NO bytes at all from
+  # term-llm on the socket, freeing the Sidekiq worker. term-llm sends a keepalive
+  # ping every ~20s while a run is live, so this fires on a dead/hung connection,
+  # not on a slow-but-alive run — no need to size it to your longest silent tool.
   second_brain_stream_idle_timeout:
     default: 300
     min: 30

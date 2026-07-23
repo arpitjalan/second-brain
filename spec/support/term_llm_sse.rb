@@ -75,6 +75,12 @@ module TermLlmSseHelpers
     sse_frame(event: "response.cancelled", data: { "response" => { "status" => "cancelled" } }, seq: seq)
   end
 
+  # A bare keepalive comment frame (term-llm sends `: ping` every ~20s). Carries
+  # no id/event/data, so run_sse skips it — but it still counts as a live chunk.
+  def sse_ping
+    ": ping\n\n"
+  end
+
   def sse_done
     sse_frame(raw_data: "[DONE]")
   end

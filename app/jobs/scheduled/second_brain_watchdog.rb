@@ -24,12 +24,12 @@ module ::Jobs
 
     private
 
-    # A live turn heartbeats its updated_at on every SSE frame (BotResponder
-    # ALIVE_INTERVAL); the largest gap between heartbeats is one fully-silent tool
-    # window — bounded by second_brain_stream_idle_timeout, which is operator-tunable
-    # up to 3600s. Reconcile only well past that so a live-but-quiet turn is never
-    # cut. So a row is "abandoned" once it's untouched for max(30m, ~2x the idle
-    # window), by which point a live turn would have heartbeated.
+    # A live turn heartbeats its updated_at on every SSE chunk (throttled to
+    # BotResponder ALIVE_INTERVAL = 60s) — INCLUDING term-llm's ~20s keepalive
+    # pings, so even a silent-but-alive tool run keeps its row fresh. updated_at
+    # therefore goes stale only when the connection actually dies (process gone,
+    # network black hole). We still reconcile only well past that — max(30m, ~2x the
+    # idle window) — as a wide margin against clock skew and a briefly wedged worker.
     def cutoff
       idle = SiteSetting.second_brain_stream_idle_timeout.to_i
       idle = 600 if idle <= 0

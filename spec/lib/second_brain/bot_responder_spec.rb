@@ -119,6 +119,16 @@ describe SecondBrain::BotResponder do
       expect(messages.last.data[:done]).to eq(true)
     end
 
+    it "ignores keepalive pings interleaved with the content" do
+      body =
+        sse_ping + sse_delta("Hel", seq: 1) + sse_ping + sse_delta("lo", seq: 2) + sse_ping + sse_done
+      stub_termllm_respond(body: body)
+
+      described_class.new(human_post).respond!
+
+      expect(bot_reply.raw).to eq("Hello")
+    end
+
     it "renders tool calls as a collapsible summary above the answer" do
       body =
         sse_tool_start(call_id: "t1", name: "web_search", args: { "query" => "weather" }, seq: 1) +

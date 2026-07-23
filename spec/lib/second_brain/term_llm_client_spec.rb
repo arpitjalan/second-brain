@@ -129,6 +129,25 @@ describe SecondBrain::TermLlmClient do
 
       expect(result[:error]).to be_nil
     end
+
+    it "fires the heartbeat on a keepalive ping (no content), so a silent run stays live" do
+      # A ping produces no on_update (no text/tools), so without a per-chunk
+      # heartbeat the post's updated_at would go stale and the watchdog could
+      # reconcile a live turn. The heartbeat must fire on the ping chunk itself.
+      stub_termllm_respond(body: sse_ping + sse_done)
+      beats = 0
+
+      result = client.stream_respond([{ role: "user", content: "x" }], heartbeat: -> { beats += 1 })
+
+      expect(result[:text]).to eq("") # nothing streamed…
+      expect(beats).to be >= 1 # …but the run was still marked alive
+    end
+
+    it "still runs with no heartbeat callback (backward compatible)" do
+      stub_termllm_respond(body: sse_delta("hi", seq: 1) + sse_done)
+
+      expect(client.stream_respond([{ role: "user", content: "x" }])[:text]).to eq("hi")
+    end
   end
 
   describe "#submit_ask_user" do

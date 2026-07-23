@@ -56,7 +56,7 @@ module ::SecondBrain
     # If the agent calls the `ask_user` tool, `ask_user` is { call_id:, questions: }
     # and we disconnect (the run stays alive server-side, keyed by session_id).
     # `session_id` lets a later request answer/resume the run (see submit_ask_user).
-    def stream_respond(messages, session_id: nil, &block)
+    def stream_respond(messages, session_id: nil, heartbeat: nil, &block)
       raise NotConfigured if base_url.blank?
 
       uri = parse_uri("#{base_url}/v1/responses")
@@ -75,13 +75,13 @@ module ::SecondBrain
       body[:model] = model if model.present?
       request.body = body.to_json
 
-      run_sse(uri, request, &block)
+      run_sse(uri, request, heartbeat: heartbeat, &block)
     end
 
     # Reconnect to a (possibly paused-then-resumed) run and stream the events
     # after `after` (a sequence number). Used to stream the continuation once an
     # ask_user prompt has been answered. Same yield/return shape as stream_respond.
-    def stream_events(response_id:, after:, &block)
+    def stream_events(response_id:, after:, heartbeat: nil, &block)
       raise NotConfigured if base_url.blank?
 
       uri = parse_uri("#{base_url}/v1/responses/#{response_id}/events?after=#{after.to_i}")
@@ -90,7 +90,7 @@ module ::SecondBrain
       auth(request)
 
       # Seed the result with the reconnected id — the continuation won't re-emit it.
-      run_sse(uri, request, response_id: response_id, &block)
+      run_sse(uri, request, response_id: response_id, heartbeat: heartbeat, &block)
     end
 
     # Answer (or cancel) a pending ask_user prompt, unblocking the paused run.
@@ -147,7 +147,7 @@ module ::SecondBrain
     # `response.created`. Without this seed the resumed result carries a blank
     # response_id, and the NEXT ask_user round loses the run — resume! bails on a
     # blank response_id and the post hangs forever.
-    def run_sse(uri, request, response_id: nil)
+    def run_sse(uri, request, response_id: nil, heartbeat: nil)
       http = build_http(uri, read_timeout: stream_idle_timeout)
 
       text = +""
@@ -170,6 +170,13 @@ module ::SecondBrain
             end
 
             response.read_body do |chunk|
+              # Any byte from term-llm — a text delta, a tool event, OR a bare
+              # `: ping` keepalive comment (sent every ~20s) — means the run is
+              # alive. Fire the heartbeat per chunk (not just on content frames, as
+              # the yield below does) so a run that's silent-but-pinging still keeps
+              # its post's updated_at fresh and the watchdog won't reconcile a LIVE
+              # turn out from under it.
+              heartbeat&.call
               # Normalize CRLF so frame-splitting on "\n\n" works regardless of
               # line endings — a CRLF stream would otherwise never frame and hang.
               buffer << chunk.gsub("\r\n", "\n")
@@ -304,13 +311,15 @@ module ::SecondBrain
     end
 
     # Per-read socket timeout for the streaming SSE connection. Net::HTTP applies
-    # read_timeout to each individual socket read, so this is effectively an
-    # *idle* timeout: the stream aborts only after this many seconds with NO frame
-    # at all — text deltas and tool start/end events each reset it. A wedged/silent
-    # term-llm then frees its Sidekiq worker after this window instead of holding it
-    # for the old hard 600s. Set the site setting safely above the longest your bot
-    # can run a single tool *silently* (no progress events). Net::ReadTimeout on
-    # trip is rescued in run_sse and surfaced as TermLlmClient::Error.
+    # read_timeout to each individual socket read, so this fires only after this
+    # many seconds with NO bytes at all on the socket. term-llm sends a `: ping`
+    # keepalive comment every ~20s for the whole life of a run (as well as text and
+    # tool events), and every one of those resets this clock — so in practice this
+    # is a DEAD-CONNECTION detector (term-llm process gone, network black hole), not
+    # a "the bot is thinking too long" cap: a live-but-slow run is never cut here.
+    # (A genuinely wedged run is ended by term-llm's own response timeout, which
+    # emits response.failed — handled in run_sse.) On trip, Net::ReadTimeout is
+    # rescued in run_sse and surfaced as TermLlmClient::Error.
     def stream_idle_timeout
       t = SiteSetting.second_brain_stream_idle_timeout.to_i
       t.positive? ? t : 600
