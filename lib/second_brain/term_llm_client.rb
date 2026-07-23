@@ -35,21 +35,6 @@ module ::SecondBrain
       SiteSetting.second_brain_term_llm_url.present?
     end
 
-    # Agentic, non-streaming reply via /v1/responses with server tools enabled.
-    def respond(messages)
-      raise NotConfigured if base_url.blank?
-
-      body = {
-        input: messages.map { |m| { type: "message", role: m[:role], content: m[:content] } },
-        include_server_tools: true,
-        stream: false,
-      }
-      model = @agent&.model.presence || SiteSetting.second_brain_term_llm_model
-      body[:model] = model if model.present?
-
-      extract_output_text(post_json("/v1/responses", body))
-    end
-
     # Streaming agentic reply via /v1/responses (stream: true). Yields
     # (text, tools) on each update and returns a hash:
     #   { text:, tools:, ask_user:, response_id:, last_seq: }
@@ -268,20 +253,6 @@ module ::SecondBrain
         end
       end
       [id, event, data_lines.empty? ? nil : data_lines.join("\n")]
-    end
-
-    # /v1/responses returns output[] items; collect text from message items.
-    def extract_output_text(response)
-      Array(response["output"])
-        .filter_map do |item|
-          next unless item["type"] == "message"
-
-          Array(item["content"])
-            .filter_map { |part| part["text"] if part["type"] == "output_text" }
-            .join
-        end
-        .join("\n")
-        .strip
     end
 
     def base_url

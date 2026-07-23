@@ -173,13 +173,6 @@ body.archetype-private_message {
     margin: 0 auto 28px;
     max-width: 34em;
   }
-
-  &__actions {
-    display: flex;
-    gap: 12px;
-    justify-content: center;
-    flex-wrap: wrap;
-  }
 }
 
 // The frictionless "start a chat" box.
@@ -270,9 +263,8 @@ body.archetype-private_message {
   gap: 10px;
 }
 
-// Muted keyboard hint next to the launcher's "Your chats" link (mirrors the
-// chat reply box's Enter-to-send hint). Hidden on narrow/touch screens, where
-// the hint doesn't apply and would crowd the row.
+// Muted "Enter to send" keyboard hint under the launcher composer. Hidden on
+// narrow/touch screens, where the hint doesn't apply and would crowd the row.
 .sb-starter__hint {
   color: var(--primary-medium);
   font-weight: normal;
@@ -818,10 +810,7 @@ body.archetype-private_message {
   }
 }
 
-// Homepage "search your chats" field — between the prompt chips and the board.
-// A quiet utility: transparent fill + faint outline so it doesn't read as a third
-// input box competing with the composer; lifts to the accent ring on focus.
-// The dedicated "search your chats" page (sidebar link + subtle homepage link).
+// The dedicated "Search AI chats" page (reachable from the sidebar link).
 .sb-search-page {
   max-width: 720px;
   margin: 48px auto 72px;

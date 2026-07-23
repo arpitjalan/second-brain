@@ -212,14 +212,25 @@ function renderForm(container, post, data, botName) {
         : `Answers sent — ${botName} is continuing…`;
       form.appendChild(sent);
     } catch (e) {
+      const status = e?.jqXHR?.status;
+      // The question is simply no longer answerable — term-llm expired the run
+      // (410), it was answered/superseded on another device (403, status no longer
+      // pending), or a newer question round replaced it / its state was cleaned up
+      // (400 stale call_id, 404 state gone). Show a calm note and leave the form
+      // disabled instead of a scary error dialog with re-enabled buttons that would
+      // just fail again. (The server also refreshes the post to its summary.)
+      if (status === 410) {
+        error.textContent = `This question expired. Ask ${botName} again to continue.`;
+        return;
+      }
+      if (status === 403 || status === 400 || status === 404) {
+        error.textContent = `This question is no longer active. Ask ${botName} again to continue.`;
+        return;
+      }
       submit.disabled = false;
       skip.disabled = false;
       submit.textContent = "Send answers";
-      if (e?.jqXHR?.status === 410) {
-        error.textContent = `This question expired. Ask ${botName} again to continue.`;
-      } else {
-        popupAjaxError(e);
-      }
+      popupAjaxError(e);
     }
   }
 

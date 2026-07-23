@@ -18,11 +18,14 @@ export default apiInitializer(() => {
       if (!label || words.length < 2) {
         return;
       }
-      let next = label.textContent;
-      while (next === label.textContent) {
-        next = words[Math.floor(Math.random() * words.length)];
+      // Pick from the words that differ from the current one. Filtering (rather
+      // than a retry loop) can't hang the tab if the list ever holds only
+      // duplicates of the current label.
+      const candidates = words.filter((w) => w !== label.textContent);
+      if (candidates.length) {
+        label.textContent =
+          candidates[Math.floor(Math.random() * candidates.length)];
       }
-      label.textContent = next;
     });
   }, CYCLE_MS);
 });

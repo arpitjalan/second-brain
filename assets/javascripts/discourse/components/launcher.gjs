@@ -189,6 +189,12 @@ export default class Launcher extends Component {
 
   @action
   handleKeydown(event) {
+    // Don't treat Enter as "send" while an IME composition is active (CJK /
+    // transliteration input) — that Enter commits the composition, it isn't a
+    // submit. Matches core's chat and docked composers.
+    if (event.isComposing || event.keyCode === 229) {
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       this.start();

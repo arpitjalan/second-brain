@@ -173,6 +173,10 @@ export default apiInitializer((api) => {
           link.insertAdjacentElement("afterend", buildCard(src));
         });
     },
-    { id: "second-brain-widgets" }
+    // onlyStream (like the copy/askuser decorators): widget cards belong in the
+    // post stream, not the composer preview — where each debounced re-cook would
+    // otherwise mount a fresh iframe and re-hit the authenticated proxy on every
+    // keystroke near a widget link.
+    { id: "second-brain-widgets", onlyStream: true }
   );
 });
