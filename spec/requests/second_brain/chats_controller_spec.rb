@@ -64,10 +64,61 @@ describe SecondBrain::ChatsController do
       expect(response.status).to eq(403)
     end
 
-    it "404s on an unknown agent" do
+    it "400s on an unknown agent (InvalidParameters)" do
       sign_in(owner)
       post "/second-brain/chats.json", params: { message: "hello", agent: "nope" }
       expect(response.status).to eq(400)
+    end
+  end
+
+  describe "POST /second-brain/chats/:topic_id/make_public" do
+    let(:bot) { SecondBrain::Bot.user }
+    fab!(:public_category, :category)
+    let!(:bot_chat) do
+      topic = Fabricate(:private_message_topic, user: owner, recipient: bot)
+      Fabricate(:post, topic: topic, user: owner, raw: "the chat contents") # convert needs a first post
+      topic
+    end
+
+    before { SiteSetting.second_brain_public_category = public_category.id.to_s }
+
+    it "lets the owner publish their bot chat (converts + marks shared)" do
+      sign_in(owner)
+      post "/second-brain/chats/#{bot_chat.id}/make_public.json"
+      expect(response.status).to eq(200)
+      bot_chat.reload
+      expect(bot_chat.private_message?).to eq(false)
+      expect(bot_chat.custom_fields["second_brain_shared"]).to be_truthy
+    end
+
+    it "lets staff publish someone else's bot chat" do
+      sign_in(Fabricate(:admin))
+      post "/second-brain/chats/#{bot_chat.id}/make_public.json"
+      expect(response.status).to eq(200)
+      expect(bot_chat.reload.private_message?).to eq(false)
+    end
+
+    it "forbids a non-owner participant from publishing" do
+      Fabricate(:topic_allowed_user, topic: bot_chat, user: other) # invited in later
+      sign_in(other)
+      post "/second-brain/chats/#{bot_chat.id}/make_public.json"
+      expect(response.status).to eq(403)
+      expect(bot_chat.reload.private_message?).to eq(true) # unchanged
+    end
+
+    it "refuses a human-to-human PM (no bot participant), even for its owner" do
+      human_pm = Fabricate(:private_message_topic, user: owner, recipient: other)
+      sign_in(owner)
+      post "/second-brain/chats/#{human_pm.id}/make_public.json"
+      expect(response.status).to eq(403)
+      expect(human_pm.reload.private_message?).to eq(true)
+    end
+
+    it "404s a topic that isn't a PM" do
+      public_topic = Fabricate(:topic, user: owner)
+      sign_in(owner)
+      post "/second-brain/chats/#{public_topic.id}/make_public.json"
+      expect(response.status).to eq(404)
     end
   end
 
@@ -225,6 +276,29 @@ describe SecondBrain::ChatsController do
       pushed = messages.first.data[:askuser]
       expect(pushed["status"]).to eq("answered")
       expect(pushed["summary"]).to eq("Vibe: Outdoors")
+    end
+
+    # The cancel branch takes a different path: no answers (skips build_answers),
+    # submits cancelled:true, stamps skipped, and STILL enqueues a resume (per
+    # term-llm semantics the run continues after a cancel).
+    it "cancels the question (skipped) with no answers and still enqueues the resume" do
+      sign_in(owner)
+      expect_enqueued_with(job: :second_brain_reply, args: { post_id: bot_post.id, mode: "resume" }) do
+        post "/second-brain/answer.json",
+             params: { post_id: bot_post.id, call_id: "call_1", cancelled: true },
+             as: :json
+      end
+
+      expect(response.status).to eq(200)
+      expect(response.parsed_body["skipped"]).to eq(true)
+      state = JSON.parse(bot_post.reload.custom_fields["second_brain_askuser"])
+      expect(state["status"]).to eq("answered")
+      expect(state["skipped"]).to eq(true)
+      expect(
+        a_request(:post, "http://personal.test/chat/v1/sessions/sb_#{topic.id}/ask_user").with(
+          body: hash_including("cancelled" => true),
+        ),
+      ).to have_been_made
     end
   end
 end

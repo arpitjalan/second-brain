@@ -151,6 +151,28 @@ describe SecondBrain::WidgetsController do
     end
   end
 
+  describe "GET /second-brain/widgets/*path (legacy family route)" do
+    it "serves a family widget with the family token (blank agent → Agent.family)" do
+      stub =
+        stub_request(:get, "http://family.test/chat/widgets/famwidget").with(
+          headers: { "Authorization" => "Bearer fam-token" },
+        ).to_return(status: 200, body: "<b>fam</b>", headers: { "Content-Type" => "text/html" })
+
+      sign_in(owner)
+      get "/second-brain/widgets/famwidget"
+      expect(response.status).to eq(200)
+      expect(response.body).to include("fam")
+      expect(stub).to have_been_requested
+    end
+
+    it "refuses an anonymous request to the proxy without hitting term-llm" do
+      upstream = stub_request(:get, "http://family.test/chat/widgets/famwidget")
+      get "/second-brain/widgets/famwidget"
+      expect(response.status).not_to eq(200)
+      expect(upstream).not_to have_been_requested
+    end
+  end
+
   describe "GET /second-brain/list-widgets (aggregation + access)" do
     before do
       stub_request(:get, "http://family.test/chat/admin/widgets/status").to_return(

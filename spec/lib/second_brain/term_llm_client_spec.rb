@@ -58,6 +58,18 @@ describe SecondBrain::TermLlmClient do
     end
   end
 
+  describe "#stream_respond (409 is NOT a replay eviction)" do
+    it "raises a plain Error, not SnapshotRequired, on a 409 to POST /v1/responses" do
+      # A 409 on the POST path is a session-limit condition, not the events-replay
+      # eviction that SnapshotRequired signals — don't mislabel it.
+      stub_termllm_respond(status: 409, body: "")
+
+      expect { client.stream_respond([{ role: "user", content: "x" }]) }.to raise_error(
+        SecondBrain::TermLlmClient::Error,
+      ) { |e| expect(e).not_to be_a(SecondBrain::TermLlmClient::SnapshotRequired) }
+    end
+  end
+
   describe "#stream_respond (SSE parsing)" do
     it "parses a CRLF-framed stream (normalizes \\r\\n line endings)" do
       body =
