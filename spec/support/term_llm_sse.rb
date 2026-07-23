@@ -63,6 +63,18 @@ module TermLlmSseHelpers
     )
   end
 
+  def sse_failed(message: "model provider error", type: "server_error", seq: nil)
+    sse_frame(
+      event: "response.failed",
+      data: { "error" => { "type" => type, "message" => message } },
+      seq: seq,
+    )
+  end
+
+  def sse_cancelled(seq: nil)
+    sse_frame(event: "response.cancelled", data: { "response" => { "status" => "cancelled" } }, seq: seq)
+  end
+
   def sse_done
     sse_frame(raw_data: "[DONE]")
   end

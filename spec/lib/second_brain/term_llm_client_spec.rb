@@ -98,6 +98,37 @@ describe SecondBrain::TermLlmClient do
       expect(result[:tools]).to be_empty
       expect(result[:text]).to eq("answer")
     end
+
+    it "captures a response.failed run (does not present it as a normal reply)" do
+      body =
+        sse_created("r1", seq: 1) +
+          sse_delta("partial", seq: 2) +
+          sse_failed(message: "upstream 529", type: "overloaded", seq: 3) +
+          sse_done
+      stub_termllm_respond(body: body)
+
+      result = client.stream_respond([{ role: "user", content: "x" }])
+
+      expect(result[:text]).to eq("partial") # partial content preserved
+      expect(result[:error]).to include(type: "overloaded", message: "upstream 529")
+    end
+
+    it "captures a response.cancelled run" do
+      body = sse_delta("half", seq: 1) + sse_cancelled(seq: 2) + sse_done
+      stub_termllm_respond(body: body)
+
+      result = client.stream_respond([{ role: "user", content: "x" }])
+
+      expect(result[:error][:type]).to eq("cancelled")
+    end
+
+    it "leaves error nil on a clean run" do
+      stub_termllm_respond(body: sse_delta("done", seq: 1) + sse_done)
+
+      result = client.stream_respond([{ role: "user", content: "x" }])
+
+      expect(result[:error]).to be_nil
+    end
   end
 
   describe "#submit_ask_user" do

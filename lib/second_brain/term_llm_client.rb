@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "net/http"
+require "openssl"
 require "uri"
 
 module ::SecondBrain
@@ -118,7 +119,7 @@ module ::SecondBrain
     rescue JSON::ParserError => e
       # A 200 with a non-JSON body must NOT silently advance the run as answered.
       raise Error, "invalid JSON from term-llm: #{e.message}"
-    rescue SocketError, SystemCallError, IOError, Timeout::Error => e
+    rescue SocketError, SystemCallError, IOError, Timeout::Error, OpenSSL::SSL::SSLError => e
       raise Error, e.message
     end
 
@@ -154,6 +155,7 @@ module ::SecondBrain
       buffer = +""
       ask_user = nil
       last_seq = 0
+      run_error = nil
 
       begin
         catch(:sb_done) do
@@ -211,16 +213,35 @@ module ::SecondBrain
                   j = JSON.parse(data) rescue {}
                   ask_user = { call_id: j["call_id"], questions: j["questions"] }
                   throw :sb_done # disconnect; the run stays alive server-side
+                when "response.failed", "response.cancelled"
+                  # Terminal failure/cancel of the run. term-llm sends the error
+                  # payload here and then [DONE]; without capturing it the run
+                  # would look like a normal (empty or truncated) success. Record
+                  # it so the caller can finalize with a clear note instead.
+                  j = JSON.parse(data) rescue {}
+                  err = j["error"].is_a?(Hash) ? j["error"] : {}
+                  run_error = {
+                    type: err["type"].presence || event.split(".").last,
+                    message: err["message"].to_s,
+                  }
+                  throw :sb_done
                 end
               end
             end
           end
         end
-      rescue SocketError, SystemCallError, IOError, Timeout::Error => e
+      rescue SocketError, SystemCallError, IOError, Timeout::Error, OpenSSL::SSL::SSLError => e
         raise Error, e.message
       end
 
-      { text: text.strip, tools: tools, ask_user: ask_user, response_id: response_id, last_seq: last_seq }
+      {
+        text: text.strip,
+        tools: tools,
+        ask_user: ask_user,
+        response_id: response_id,
+        last_seq: last_seq,
+        error: run_error,
+      }
     end
 
     # Parse one SSE frame into [id, event, data]. Frames are "id:"/"event:"/
@@ -312,7 +333,7 @@ module ::SecondBrain
       JSON.parse(response.body)
     rescue JSON::ParserError => e
       raise Error, "invalid JSON from term-llm: #{e.message}"
-    rescue SocketError, SystemCallError, IOError, Timeout::Error => e
+    rescue SocketError, SystemCallError, IOError, Timeout::Error, OpenSSL::SSL::SSLError => e
       raise Error, e.message
     end
   end

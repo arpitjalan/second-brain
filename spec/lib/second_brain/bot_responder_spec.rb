@@ -37,6 +37,23 @@ describe SecondBrain::BotResponder do
     end
   end
 
+  describe "#forum_context" do
+    it "sends the forum note as a developer message, not system" do
+      # A system-role message would make term-llm skip injecting the agent's own
+      # configured persona; developer role reaches the model without suppressing it.
+      SiteSetting.second_brain_forum_actions_enabled = true
+      ctx = described_class.new(human_post).send(:forum_context)
+      expect(ctx.length).to eq(1)
+      expect(ctx.first[:role]).to eq("developer")
+      expect(ctx.first[:content]).to include("discourse")
+    end
+
+    it "is empty when forum actions are disabled" do
+      SiteSetting.second_brain_forum_actions_enabled = false
+      expect(described_class.new(human_post).send(:forum_context)).to eq([])
+    end
+  end
+
   describe "#abort_with_failure!" do
     it "finalizes the existing 'Thinking…' placeholder with the failure message (respond path)" do
       placeholder = described_class.ensure_placeholder(topic)
@@ -135,6 +152,22 @@ describe SecondBrain::BotResponder do
       described_class.new(human_post).respond!
 
       expect(bot_reply.raw).to include(reply_failed)
+    end
+
+    it "surfaces a response.failed run instead of presenting the partial as complete" do
+      # term-llm streamed some text, then ended the run with response.failed. The
+      # old code fell through to [DONE] and finalized the partial as if it were the
+      # whole answer; now it must keep the partial AND append the failure note.
+      body =
+        sse_delta("Here is what I found so f", seq: 1) +
+          sse_failed(message: "provider timeout", seq: 2) +
+          sse_done
+      stub_termllm_respond(body: body)
+
+      described_class.new(human_post).respond!
+
+      expect(bot_reply.raw).to include("Here is what I found so f") # partial kept
+      expect(bot_reply.raw).to include(reply_failed) # and the note appended
     end
 
     it "writes the final answer to the DB once" do

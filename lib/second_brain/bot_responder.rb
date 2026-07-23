@@ -180,9 +180,11 @@ module ::SecondBrain
         return
       end
 
-      # Never strand the post silently: if the continuation failed, finalize with
-      # whatever streamed plus a clear note so the user knows to re-ask.
-      if error
+      # Never strand the post silently: if the continuation failed — either the
+      # stream raised (network) or term-llm emitted response.failed/cancelled
+      # (result[:error]) — finalize with whatever streamed plus a clear note so the
+      # user knows to re-ask.
+      if error || result[:error]
         note = I18n.t("second_brain.askuser.interrupted")
         body = full_text.strip.present? ? "#{full_text}\n\n#{note}" : note
         finalize(@post, body, tools)
@@ -392,6 +394,14 @@ module ::SecondBrain
       tools = seed_tools + (result[:tools] || [])
       if result[:ask_user]
         pause_for_ask_user(post, session_id, result, full_text, tools)
+      elsif result[:error]
+        # term-llm ended the run with response.failed/cancelled. Preserve whatever
+        # streamed (the member already watched it) and append a clear note, instead
+        # of presenting a partial or empty answer as if it completed normally. Don't
+        # title a failed exchange — a later successful turn will.
+        note = I18n.t("second_brain.errors.reply_failed")
+        body = full_text.strip.present? ? "#{full_text}\n\n#{note}" : note
+        finalize(post, body, tools)
       else
         finalize(post, full_text, tools)
         maybe_title!(messages)
@@ -744,7 +754,11 @@ module ::SecondBrain
         You can take actions on the forum — create topics, reply, search, send messages — using your "discourse" skill (it has the forum's API access configured). You always act as yourself (your own bot account); never impersonate members. Whenever you create or reference forum content, include the link.
       MSG
 
-      [{ role: "system", content: content }]
+      # Sent as "developer", not "system": term-llm only injects the agent's own
+      # configured system prompt when the input carries NO system message, so a
+      # system-role forum note would silently REPLACE the agent's persona. A
+      # developer-role message reaches the model without suppressing that injection.
+      [{ role: "developer", content: content }]
     end
   end
 end
