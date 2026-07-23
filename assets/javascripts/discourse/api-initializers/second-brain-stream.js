@@ -5,10 +5,13 @@ import loadMorphlex from "discourse/lib/load-morphlex";
 // to "/second-brain/stream" (delivered only to the chat's participants).
 //
 // In the Glimmer post stream (the only mode since Discourse 2026.x), setting
-// post.cooked does NOT re-render the post mid-stream — it only takes effect on a
-// full render. So, exactly like Discourse's own AI streamer, we morph the rendered
-// ".cooked" DOM directly while streaming (and preventCloak so the post isn't
-// unloaded under us), then write the model's cooked once on the final message.
+// post.cooked re-renders the whole post and re-runs every decorator — far too
+// costly to do per streamed chunk, and it would also blow away live DOM state (a
+// <details> the user opened). So, exactly like Discourse's own AI streamer, we
+// morph the rendered ".cooked" DOM directly while streaming (and preventCloak so
+// the post isn't unloaded under us), then write the model's cooked once on the
+// final message — that final set() is the canonical re-render that restores the
+// copy button / ask_user decorations the morphs don't apply.
 const MORPH_OPTIONS = {
   // Don't fight the user toggling a <details> (our collapsible tool-call block)
   // open/closed while new content streams in.

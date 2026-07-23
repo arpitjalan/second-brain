@@ -19,6 +19,14 @@ export default class SbAttach extends Component {
 
   setupInput = (el) => this.uppyUpload.setup(el);
 
+  willDestroy() {
+    super.willDestroy(...arguments);
+    // Release the Uppy instance + its appEvents/MessageBus handlers. Without this
+    // every homepage↔chat navigation strands another instance (this component
+    // mounts in the launcher and in every inline reply box).
+    this.uppyUpload.teardown();
+  }
+
   @action
   openPicker() {
     this.uppyUpload.openPicker();

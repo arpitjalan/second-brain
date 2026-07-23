@@ -241,11 +241,17 @@ module ::SecondBrain
     end
 
     def search_card(post, topic, query)
+      # blurb_for returns Sanitize.clean output — plain text (tags stripped) with
+      # HTML entities encoded (& -> &amp;, < -> &lt;). The client renders it with
+      # {{card.blurb}}, which escapes AGAIN, so code/URLs/"a & b" would show literal
+      # &amp;/&lt;. Decode once here; the client's single escape then renders it
+      # correctly (still safe — it's plain text, and the client re-escapes).
+      blurb = Search::GroupedSearchResults.blurb_for(cooked: post.cooked, term: query)
       {
         title: topic.title,
         url: "#{topic.relative_url}/#{post.post_number}",
         username: topic.user&.username,
-        blurb: Search::GroupedSearchResults.blurb_for(cooked: post.cooked, term: query),
+        blurb: CGI.unescapeHTML(blurb.to_s),
         age: short_age(topic.bumped_at),
       }
     end

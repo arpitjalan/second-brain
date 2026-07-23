@@ -81,7 +81,11 @@ module ::SecondBrain
       response.headers["Cache-Control"] = "no-store"
       response.headers["Content-Security-Policy"] = WIDGET_CSP
       render body: body, status: upstream.code.to_i, content_type: content_type
-    rescue SocketError, Timeout::Error, Errno::ECONNREFUSED, Errno::EHOSTUNREACH => e
+    rescue SocketError, Timeout::Error, Errno::ECONNREFUSED, Errno::EHOSTUNREACH,
+           Errno::ECONNRESET, EOFError, Net::HTTPBadResponse => e
+      # A widget process that dies mid-response (the manager SIGKILLs on failure and
+      # reaps idle ones) resets/EOFs the connection — surface the calm 502 rather
+      # than letting it bubble to a Discourse 500 page rendered inside the iframe.
       render plain: "Could not reach the widget: #{e.message}", status: :bad_gateway
     end
 

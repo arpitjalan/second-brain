@@ -50,9 +50,12 @@ PERSONAL=false
 
 # --- 0. discover the agent's container + its network --------------------------
 say "Discovering container for agent '$AGENT' + network"
-# `|| true` so a no-match grep (no such container) doesn't trip `set -e` and exit
-# silently one line before the helpful error below.
-CONTAINER="${CONTAINER:-$(docker ps --format '{{.Names}}' | grep -E "contain-${AGENT}.*app" | head -1 || true)}"
+# Anchor the agent name to the exact `…-contain-<agent>-app-<n>` shape: an
+# unanchored "contain-${AGENT}.*app" would also match a longer sibling (agent
+# "stan" matching container "…-contain-stan-arpit-app-1"), silently wiring the
+# wrong agent. `|| true` so a no-match grep doesn't trip `set -e` before the
+# helpful error below.
+CONTAINER="${CONTAINER:-$(docker ps --format '{{.Names}}' | grep -E "contain-${AGENT}-app-[0-9]+$" | head -1 || true)}"
 [ -n "$CONTAINER" ] || die "No running container for agent '$AGENT' (expected ~ term-llm-contain-${AGENT}-app-1).
   This script wires up an EXISTING term-llm container — it doesn't create one.
   Create + start it first, then re-run:

@@ -187,6 +187,20 @@ namespace :second_brain do
 
     # The bot User: TL4, non-admin, locked so it sticks. Mirrors setup-local-dev.sh.
     existing = User.find_by(username_lower: bot_name.downcase)
+
+    # Never silently convert a pre-existing HUMAN account into a bot (an easy
+    # SB_BOT/SB_OWNER typo would strip its admin, lock its trust level, and mint an
+    # API key in its name). A real provisioned agent bot has the reserved email or
+    # already has a registry row; anything else, refuse.
+    if existing &&
+         !existing.email.to_s.end_with?("@bot.second-brain.invalid") &&
+         !SecondBrain::AgentRecord.exists?(bot_user_id: existing.id)
+      abort "'#{existing.username}' already exists and doesn't look like a second-brain agent bot " \
+              "(no @bot.second-brain.invalid email, no registry row). Refusing to convert it — this " \
+              "would strip admin, lock its trust level, and mint an API key as this account. Use a " \
+              "fresh bot username if you meant to create a new agent."
+    end
+
     suggested = UserNameSuggester.suggest(bot_name)
     if existing.nil? && suggested.downcase != bot_name.downcase
       abort "'#{bot_name}' isn't a usable Discourse username (reserved/invalid — Discourse " \
@@ -218,14 +232,18 @@ namespace :second_brain do
     if !created && row.owner_user_id != owner.id
       puts "  note: reassigning '#{bot.username}' from owner_id=#{row.owner_user_id} to #{owner.username}."
     end
-    row.update!(
+    attrs = {
       term_llm_url: url,
       term_llm_token: token,
       agent_name: bot.username,
-      model: model.presence,
       owner_user_id: owner.id,
       forum_role: "tl4",
-    )
+    }
+    # Only touch the model when SB_MODEL is given (empty clears it = term-llm's
+    # default; omitting it leaves the current model untouched), matching
+    # set_family_agent — so a token-rotation re-run doesn't silently reset it.
+    attrs[:model] = model.presence if ENV.key?("SB_MODEL")
+    row.update!(attrs)
     SiteSetting.second_brain_forum_actions_enabled = true
 
     puts "✓ Personal agent '#{bot.username}' #{created ? "registered" : "updated"} — owner #{owner.username}, TL4."

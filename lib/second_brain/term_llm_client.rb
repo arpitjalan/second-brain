@@ -75,7 +75,8 @@ module ::SecondBrain
       auth(request)
 
       # Seed the result with the reconnected id — the continuation won't re-emit it.
-      run_sse(uri, request, response_id: response_id, heartbeat: heartbeat, &block)
+      # replay: true — a 409 here is an evicted replay buffer (SnapshotRequired).
+      run_sse(uri, request, response_id: response_id, heartbeat: heartbeat, replay: true, &block)
     end
 
     # Answer (or cancel) a pending ask_user prompt, unblocking the paused run.
@@ -132,7 +133,7 @@ module ::SecondBrain
     # `response.created`. Without this seed the resumed result carries a blank
     # response_id, and the NEXT ask_user round loses the run — resume! bails on a
     # blank response_id and the post hangs forever.
-    def run_sse(uri, request, response_id: nil, heartbeat: nil)
+    def run_sse(uri, request, response_id: nil, heartbeat: nil, replay: false)
       http = build_http(uri, read_timeout: stream_idle_timeout)
 
       text = +""
@@ -146,9 +147,12 @@ module ::SecondBrain
         catch(:sb_done) do
           http.request(request) do |response|
             unless response.is_a?(Net::HTTPSuccess)
-              # 409 from events?after = replay buffer evicted (unrecoverable here);
-              # everything else is a generic/transient failure.
-              if response.code.to_i == 409
+              # A 409 on the events?after RECONNECT means the replay buffer was
+              # evicted (SnapshotRequired). A 409 on POST /v1/responses is a
+              # different thing (session limit reached), so only the reconnect path
+              # maps it to SnapshotRequired — otherwise it'd be mislabeled as replay
+              # loss. Everything else is a generic/transient failure either way.
+              if replay && response.code.to_i == 409
                 raise SnapshotRequired, "replay no longer available (HTTP 409)"
               end
               raise Error, "term-llm returned HTTP #{response.code}"
