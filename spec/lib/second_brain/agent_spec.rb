@@ -76,6 +76,36 @@ describe SecondBrain::Agent do
       client = described_class.resolve(bot).client
       expect(client.send(:base_url)).to eq("http://personal.test/chat")
     end
+
+    it "usable_by? — family serves anyone; a personal agent only its owner" do
+      family = described_class.family
+      personal = described_class.resolve(bot)
+      stranger = Fabricate(:user)
+
+      expect(family).to be_usable_by(owner)
+      expect(family).to be_usable_by(stranger)
+      expect(personal).to be_usable_by(owner)
+      expect(personal).not_to be_usable_by(stranger)
+      expect(personal).not_to be_usable_by(nil)
+    end
+
+    it "widget_proxy_prefix — family keeps the legacy path; a personal agent is scoped" do
+      expect(described_class.family.widget_proxy_prefix).to eq("/second-brain/widgets/")
+      expect(described_class.resolve(bot).widget_proxy_prefix).to eq(
+        "/second-brain/agent-widgets/stan_arpit/",
+      )
+    end
+  end
+
+  describe "AgentRecord validations" do
+    fab!(:some_bot) { Fabricate(:user, username: "stan_two") }
+
+    it "requires a term-llm url and token (a registry row has no global-settings fallback)" do
+      row =
+        SecondBrain::AgentRecord.new(bot_user_id: some_bot.id, owner_user_id: family_bot.id, forum_role: "tl4")
+      expect(row).not_to be_valid
+      expect(row.errors.attribute_names).to include(:term_llm_url, :term_llm_token)
+    end
   end
 
   describe ".for_topic" do
