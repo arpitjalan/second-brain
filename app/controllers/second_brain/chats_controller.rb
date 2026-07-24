@@ -143,9 +143,7 @@ module ::SecondBrain
       # A personal agent's run is private to its owner — being a PM participant
       # (e.g. invited in later) is not enough to drive/answer it.
       agent = Agent.for_topic(post.topic) || Agent.family
-      if !agent.shared? && agent.owner_user_id != current_user.id
-        raise Discourse::InvalidAccess
-      end
+      raise Discourse::InvalidAccess unless agent.usable_by?(current_user)
 
       cancelled = ActiveModel::Type::Boolean.new.cast(params[:cancelled])
 
@@ -211,7 +209,7 @@ module ::SecondBrain
 
       agent = Agent.resolve(::User.find_by(username_lower: requested.downcase))
       raise Discourse::InvalidParameters, :agent if agent.nil?
-      raise Discourse::InvalidAccess unless agent.shared? || agent.owner_user_id == current_user.id
+      raise Discourse::InvalidAccess unless agent.usable_by?(current_user)
       agent
     end
 

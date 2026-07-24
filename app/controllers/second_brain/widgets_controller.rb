@@ -125,15 +125,8 @@ module ::SecondBrain
 
       agent = Agent.resolve(::User.find_by(username_lower: requested.downcase))
       raise Discourse::NotFound if agent.nil?
-      raise Discourse::InvalidAccess unless agent.shared? || agent.owner_user_id == current_user.id
+      raise Discourse::InvalidAccess unless agent.usable_by?(current_user)
       agent
-    end
-
-    # Same-origin proxy prefix for an agent's widgets. Family keeps the legacy path
-    # (so old embeds keep working); personal agents get an agent-scoped path so the
-    # widget's own relative fetches inherit the agent.
-    def widget_proxy_prefix(agent)
-      agent.shared? ? "/second-brain/widgets/" : "/second-brain/agent-widgets/#{agent.user.username}/"
     end
 
     # The same-origin URL the widget's relative refs should resolve against: the
@@ -142,7 +135,7 @@ module ::SecondBrain
     # `fetch('api/x')` resolves into the widget.
     def widget_base_href(agent, final_uri)
       after = final_uri.path.to_s.split("/widgets/", 2)[1].to_s
-      "#{widget_proxy_prefix(agent)}#{after}"
+      "#{agent.widget_proxy_prefix}#{after}"
     end
 
     # Inject `<base href>` right after <head> so relative URLs resolve against the
@@ -161,7 +154,7 @@ module ::SecondBrain
     # prefix. No-op on current widgets; only the main HTML document is rewritten
     # (JS-constructed URLs are out of scope — see docs/TODO.md, separate-origin work).
     def rewrite_widget_base(body, agent)
-      prefix = widget_proxy_prefix(agent)
+      prefix = agent.widget_proxy_prefix
       termllm_widgets = "#{URI.parse(agent.url).path.to_s.sub(%r{/+\z}, "")}/widgets/"
       body = body.gsub(termllm_widgets, prefix) unless termllm_widgets == prefix
       body = body.gsub("/second-brain/widgets/", prefix) unless agent.shared?
@@ -185,7 +178,7 @@ module ::SecondBrain
           read_timeout: 6,
         )
       data = JSON.parse(upstream.body) rescue {}
-      prefix = widget_proxy_prefix(agent)
+      prefix = agent.widget_proxy_prefix
       Array(data["widgets"]).filter_map do |w|
         mount = (w["mount"] || w["id"]).to_s
         next if mount.blank?

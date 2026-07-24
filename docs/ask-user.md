@@ -26,6 +26,11 @@ session id — so a *different* client/process can answer it later.
   colliding with a still-streaming or paused prior turn (a concurrent run on a busy
   session is rejected as a `conflict_error`). Answer/resume key off the session id
   persisted in the post state at pause time, so they still address the right run.
+  - **Deploy note:** the header is literally named `session_id` (an underscore).
+    nginx (and some proxies) **drop underscore headers by default**
+    (`underscores_in_headers off`). If term-llm is fronted by such a proxy, every
+    turn silently loses its session and each `ask_user` instantly reports "expired".
+    Set `underscores_in_headers on;` on the upstream, or don't proxy term-llm.
 - **Answer / resume** (connection-independent — term-llm's resume is session-keyed,
   not connection-bound, so a different process can answer later): `POST /v1/sessions/{session_id}/ask_user`
   ```json

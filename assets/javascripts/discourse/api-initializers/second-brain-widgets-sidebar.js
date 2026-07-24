@@ -5,7 +5,28 @@ import { apiInitializer } from "discourse/lib/api";
 // A "Widgets" sidebar section listing the term-llm widgets across the member's
 // agents (family + their own; personal ones are labelled). Each link opens the
 // widget (through our authenticated proxy) in a new tab.
+
+// Fetch the widget list at most once per page load. Core re-instantiates a custom
+// sidebar section whenever sidebar state changes (e.g. every keystroke in the
+// filter box), so fetching inside the section constructor would spam
+// /second-brain/list-widgets and flicker the section. Cache the resolved list so
+// re-instantiations read it synchronously.
+let widgetsCache = null;
+let widgetsPromise = null;
+function loadWidgetsOnce() {
+  widgetsPromise ||= ajax("/second-brain/list-widgets")
+    .then((result) => (widgetsCache = result.widgets || []))
+    .catch(() => (widgetsCache = []));
+  return widgetsPromise;
+}
+
 export default apiInitializer((api) => {
+  // Personal, authenticated feature — don't register the section (or its fetch,
+  // which anon would 403 on) for logged-out visitors. Matches second-brain-sidebar.
+  if (!api.getCurrentUser()) {
+    return;
+  }
+
   // The widget links are same-origin (our proxy), so Discourse's built-in
   // "external links in new tab" never triggers. Open them in a new tab via a
   // delegated handler scoped to our section (survives re-renders; guarded so
@@ -66,17 +87,15 @@ export default apiInitializer((api) => {
       }
 
       return class extends BaseCustomSidebarSection {
-        @tracked widgets = [];
+        @tracked widgets = widgetsCache || [];
 
         constructor() {
           super(...arguments);
-          ajax("/second-brain/list-widgets")
-            .then((result) => {
-              this.widgets = result.widgets || [];
-            })
-            .catch(() => {
-              this.widgets = [];
-            });
+          // Already loaded this page → read the cache synchronously (no refetch,
+          // no flicker). Otherwise fetch once and fill in when it lands.
+          if (!widgetsCache) {
+            loadWidgetsOnce().then((widgets) => (this.widgets = widgets));
+          }
         }
 
         get name() {

@@ -28,6 +28,20 @@ module ::SecondBrain
       owner_user_id.nil?
     end
 
+    # The privacy invariant of the whole multi-agent design, in one place: the
+    # shared family agent serves everyone; a personal agent serves only its owner.
+    # Used to gate chatting, answering, and widget access.
+    def usable_by?(user)
+      shared? || (user && owner_user_id == user.id)
+    end
+
+    # Same-origin Discourse proxy prefix for this agent's widgets: the family agent
+    # keeps the legacy path (so old embeds keep working); a personal agent gets an
+    # agent-scoped path so a widget's relative subresource fetches inherit the agent.
+    def widget_proxy_prefix
+      shared? ? "/second-brain/widgets/" : "/second-brain/agent-widgets/#{user.username}/"
+    end
+
     def configured?
       url.present?
     end

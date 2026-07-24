@@ -19,7 +19,7 @@ module ::SecondBrain
       return unless agent.configured? # this agent's term-llm endpoint isn't set
       # A personal agent only serves its owner (defense-in-depth — create already
       # restricts who can open the PM).
-      return if !agent.shared? && agent.owner_user_id != post.user_id
+      return unless agent.usable_by?(post.user)
 
       Jobs.enqueue(:second_brain_reply, post_id: post.id)
     end

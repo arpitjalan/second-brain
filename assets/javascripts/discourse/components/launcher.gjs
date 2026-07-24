@@ -129,6 +129,10 @@ export default class Launcher extends Component {
       this.selectedAgent = this.pickDefaultAgent();
     } catch {
       this.agents = [];
+      // Still honor the member's remembered choice so a transient fetch failure
+      // doesn't silently fall back to the server default (owned-first), which
+      // would override e.g. a member who prefers the family agent.
+      this.selectedAgent = readStoredAgent(this.currentUser.id);
     }
   }
 
