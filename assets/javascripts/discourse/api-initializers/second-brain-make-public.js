@@ -7,16 +7,11 @@ import DiscourseURL from "discourse/lib/url";
 // shown only to the chat's owner (or staff). It converts the PM into a public
 // topic via the plugin endpoint, then navigates to the new public topic.
 export default apiInitializer((api) => {
-  const siteSettings = api.container.lookup("service:site-settings");
   const currentUser = api.container.lookup("service:current-user");
 
   if (!currentUser) {
     return;
   }
-
-  const botUsername = (
-    siteSettings.second_brain_bot_username || "stan"
-  ).toLowerCase();
 
   api.registerTopicFooterButton({
     id: "second-brain-make-public",
@@ -34,7 +29,7 @@ export default apiInitializer((api) => {
 
     displayed() {
       const topic = this.topic;
-      if (!topic || !topic.isPrivateMessage) {
+      if (!topic?.isPrivateMessage || !topic.second_brain_agent) {
         return false;
       }
 
@@ -44,10 +39,7 @@ export default apiInitializer((api) => {
         return false;
       }
 
-      const allowedUsers = details?.allowed_users || [];
-      return allowedUsers.some(
-        (u) => u.username?.toLowerCase() === botUsername
-      );
+      return true;
     },
 
     async action() {
@@ -61,7 +53,7 @@ export default apiInitializer((api) => {
       try {
         const result = await ajax(
           `/second-brain/chats/${topic.id}/make_public`,
-          { type: "POST" }
+          { type: "POST" },
         );
         // Leave the flag set — we're navigating away to the new public topic.
         DiscourseURL.routeTo(result.url);

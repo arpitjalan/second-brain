@@ -56,7 +56,7 @@ describe SecondBrain::BotResponder do
 
   describe "#abort_with_failure!" do
     it "finalizes the existing 'Thinking…' placeholder with the failure message (respond path)" do
-      placeholder = described_class.ensure_placeholder(topic)
+      placeholder = described_class.ensure_placeholder(human_post)
       described_class.new(human_post).abort_with_failure!(resume: false)
       expect(placeholder.reload.raw).to include(reply_failed)
     end
@@ -67,7 +67,7 @@ describe SecondBrain::BotResponder do
     end
 
     it "does not clobber a turn that already reached a terminal state" do
-      placeholder = described_class.ensure_placeholder(topic)
+      placeholder = described_class.ensure_placeholder(human_post)
       responder = described_class.new(human_post)
       responder.instance_variable_set(:@finalized, true)
       responder.abort_with_failure!(resume: false)
@@ -83,7 +83,7 @@ describe SecondBrain::BotResponder do
 
   describe Jobs::SecondBrainReply do
     it "surfaces an unexpected error on the placeholder instead of leaving it on 'Thinking…'" do
-      placeholder = SecondBrain::BotResponder.ensure_placeholder(topic)
+      placeholder = SecondBrain::BotResponder.ensure_placeholder(human_post)
       SecondBrain::BotResponder.any_instance.stubs(:respond!).raises(StandardError, "boom")
 
       described_class.new.execute(post_id: human_post.id)
@@ -92,7 +92,7 @@ describe SecondBrain::BotResponder do
     end
 
     it "does not re-raise (no Sidekiq retry storm) on an unexpected error" do
-      SecondBrain::BotResponder.ensure_placeholder(topic)
+      SecondBrain::BotResponder.ensure_placeholder(human_post)
       SecondBrain::BotResponder.any_instance.stubs(:respond!).raises(StandardError, "boom")
 
       expect { described_class.new.execute(post_id: human_post.id) }.not_to raise_error
@@ -109,6 +109,65 @@ describe SecondBrain::BotResponder do
     end
 
     let(:bot_reply) { topic.reload.posts.find_by(user_id: bot.id) }
+
+    it "preserves both replies when a second turn finishes before the first" do
+      first = human_post
+      second = nil
+      stub_termllm_respond do |request|
+        input = JSON.parse(request.body)["input"]
+        if input.last["content"] == first.raw
+          second = Fabricate(:post, topic: topic, user: human, raw: "A separate follow-up question")
+          described_class.new(second).respond!
+          answer = "First answer"
+        else
+          answer = "Second answer"
+        end
+        { status: 200, body: sse_delta(answer) + sse_done }
+      end
+
+      described_class.new(first).respond!
+
+      replies = topic.posts.where(user_id: bot.id)
+      expect(replies.pluck(:raw)).to contain_exactly("First answer", "Second answer")
+      expect(replies.find_by(raw: "First answer").reply_to_post_number).to eq(first.post_number)
+      expect(replies.find_by(raw: "Second answer").reply_to_post_number).to eq(second.post_number)
+    end
+
+    it "sends only the transcript through the triggering message to term-llm" do
+      first = human_post
+      later = Fabricate(:post, topic: topic, user: human, raw: "A later message")
+      inputs = []
+      stub_termllm_respond do |request|
+        inputs << JSON.parse(request.body)["input"]
+        { status: 200, body: sse_delta("First answer") + sse_done }
+      end
+
+      described_class.new(first).respond!
+
+      expect(inputs.first.map { |message| message["content"] }).to include(first.raw)
+      expect(inputs.first.map { |message| message["content"] }).not_to include(later.raw)
+    end
+
+    it "indexes the finalized answer even when the placeholder was already indexed" do
+      SearchIndexer.enable
+      placeholder = described_class.ensure_placeholder(human_post)
+      SearchIndexer.index(placeholder.reload, force: true)
+      stub_termllm_respond(body: sse_delta("quasarwarranty") + sse_done)
+
+      described_class.new(human_post).respond!
+
+      expect(PostSearchData.find_by(post_id: placeholder.id).raw_data).to include("quasarwarranty")
+    end
+
+    it "reuses the completed reply when the controller reaches it after the job" do
+      stub_termllm_respond(body: sse_delta("Already finished") + sse_done)
+      described_class.new(human_post).respond!
+
+      reply = described_class.ensure_placeholder(human_post)
+
+      expect(reply.raw).to eq("Already finished")
+      expect(topic.posts.where(user_id: bot.id).count).to eq(1)
+    end
 
     it "streams a plain answer and finalizes the placeholder with it" do
       stub_termllm_respond(body: sse_delta("Hello ") + sse_delta("there", seq: 2) + sse_done)
@@ -258,6 +317,21 @@ describe SecondBrain::BotResponder do
       expect(post.raw).to include("web_search") # pre-pause tools (the regression)
       expect(JSON.parse(post.custom_fields[described_class::ASK_FIELD])["status"]).to eq("done")
       expect(post.custom_fields[described_class::STATE_FIELD]).to be_nil # dropped on finish
+    end
+
+    it "indexes both the paused text and its resumed continuation" do
+      SearchIndexer.enable
+      post = pause_then_answer
+      expect(PostSearchData.find_by(post_id: post.id).raw_data).to include("Before the question.")
+      stub_termllm_events(
+        response_id: "resp_1",
+        after: 5,
+        body: sse_delta("After the answer.", seq: 6) + sse_done,
+      )
+
+      described_class.new(post).resume!
+
+      expect(PostSearchData.find_by(post_id: post.id).raw_data).to include("After the answer.")
     end
 
     it "pauses again when the continuation asks a second question, keeping all prior tools" do

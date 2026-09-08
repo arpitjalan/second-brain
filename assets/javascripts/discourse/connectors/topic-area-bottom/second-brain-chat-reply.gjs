@@ -5,19 +5,17 @@ import { on } from "@ember/modifier";
 import { action } from "@ember/object";
 import didInsert from "@ember/render-modifiers/modifiers/did-insert";
 import { next } from "@ember/runloop";
-import { service } from "@ember/service";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import { getUploadMarkdown } from "discourse/lib/uploads";
 import DButton from "discourse/ui-kit/d-button";
+import { i18n } from "discourse-i18n";
 import SbAttach from "../../components/sb-attach";
 
 // A frictionless inline reply box at the bottom of a chat (a PM). Type and
 // send — no composer. The post is created via the API and appended to the
 // stream; the bot's reply then streams in below it like any other post.
 export default class SecondBrainChatReply extends Component {
-  @service siteSettings;
-
   @tracked value = "";
   @tracked submitting = false;
   @tracked attachments = [];
@@ -27,13 +25,14 @@ export default class SecondBrainChatReply extends Component {
     return this.args.outletArgs.model;
   }
 
-  // Chats are PMs; only show the inline box there, not on public topics.
   get isChat() {
-    return this.topic?.isPrivateMessage;
+    return this.topic?.isPrivateMessage && this.topic.second_brain_agent;
   }
 
-  get botUsername() {
-    return this.siteSettings.second_brain_bot_username || "stan";
+  get replyPlaceholder() {
+    return i18n("second_brain.reply_placeholder", {
+      name: this.topic.second_brain_agent?.name,
+    });
   }
 
   @action
@@ -112,7 +111,7 @@ export default class SecondBrainChatReply extends Component {
       <div class="sb-chat-reply sb-starter">
         <textarea
           class="sb-starter__input"
-          placeholder="Message {{this.botUsername}}…"
+          placeholder={{this.replyPlaceholder}}
           rows="2"
           value={{this.value}}
           disabled={{this.submitting}}

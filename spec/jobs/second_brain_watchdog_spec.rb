@@ -12,6 +12,7 @@ describe Jobs::SecondBrainWatchdog do
   fab!(:human, :user)
   let(:bot) { SecondBrain::Bot.user }
   let(:topic) { Fabricate(:private_message_topic, user: human, recipient: bot) }
+  let(:human_post) { Fabricate(:post, topic: topic, user: human) }
 
   let(:ask_field) { SecondBrain::BotResponder::ASK_FIELD }
   let(:state_field) { SecondBrain::BotResponder::STATE_FIELD }
@@ -23,7 +24,7 @@ describe Jobs::SecondBrainWatchdog do
   end
 
   it "finalizes a placeholder stranded on 'Thinking…' past the threshold" do
-    placeholder = SecondBrain::BotResponder.ensure_placeholder(topic)
+    placeholder = SecondBrain::BotResponder.ensure_placeholder(human_post)
     placeholder.update_columns(updated_at: 1.hour.ago)
 
     run!
@@ -32,7 +33,7 @@ describe Jobs::SecondBrainWatchdog do
   end
 
   it "never calls term-llm (cannot re-poke a stuck run / loop)" do
-    placeholder = SecondBrain::BotResponder.ensure_placeholder(topic)
+    placeholder = SecondBrain::BotResponder.ensure_placeholder(human_post)
     placeholder.update_columns(updated_at: 1.hour.ago)
 
     run!
@@ -41,7 +42,7 @@ describe Jobs::SecondBrainWatchdog do
   end
 
   it "leaves a fresh (in-flight) placeholder alone" do
-    placeholder = SecondBrain::BotResponder.ensure_placeholder(topic)
+    placeholder = SecondBrain::BotResponder.ensure_placeholder(human_post)
 
     run!
 
@@ -94,7 +95,7 @@ describe Jobs::SecondBrainWatchdog do
 
   it "does not reconcile within the idle-timeout-derived cutoff (a long silent tool is still live)" do
     SiteSetting.second_brain_stream_idle_timeout = 3600 # cutoff -> max(30m, ~2h5m)
-    placeholder = SecondBrain::BotResponder.ensure_placeholder(topic)
+    placeholder = SecondBrain::BotResponder.ensure_placeholder(human_post)
     placeholder.update_columns(updated_at: 90.minutes.ago) # stale by 90m, but < derived cutoff
 
     run!

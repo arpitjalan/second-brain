@@ -63,8 +63,9 @@ There are **two independent integration directions**, wired separately:
    (plugin enabled, regular post, it's a PM, term-llm configured, author isn't the
    bot — loop guard, bot is a participant), then it enqueues `Jobs::SecondBrainReply`.
 3. **Reply (off-request).** The Sidekiq job runs `BotResponder#respond!`, which:
-   - posts a `_Thinking…_` placeholder post immediately,
-   - builds the transcript (`build_messages`) from the PM's posts, optionally prefixed
+   - finds or creates a `_Thinking…_` reply keyed to the triggering post via
+     `reply_to_post_number`, so overlapping turns cannot share a placeholder,
+   - builds the transcript (`build_messages`) through the triggering post, optionally prefixed
      with a **forum-context** system message (when forum actions are enabled),
    - calls `TermLlmClient#stream_respond` and **streams** the growing answer into the
      placeholder,
@@ -75,6 +76,8 @@ There are **two independent integration directions**, wired separately:
 The user can also reply inline from the chat via the box in
 `connectors/topic-area-bottom/second-brain-chat-reply.gjs` (posts via the API and
 appends to the stream) instead of the native composer.
+The topic serializer supplies `second_brain_agent` (display name and username only)
+so the reply box and Make public button recognize both family and personal agents.
 
 ## Streaming design (the hard-won part)
 
@@ -90,8 +93,15 @@ request storm). Instead:
   own AI streamer — and `preventCloak`s the post so it stays rendered. It sets the
   **post model's `cooked`** only on the final message (and as a fallback when the post
   element isn't on screen).
-- **Finalize.** The answer is persisted once (`update_columns(raw)` + `rebake!`) and a
-  single `publish_change_to_clients!(:revised)` lets non-streaming viewers catch up.
+- **Finalize.** The answer is persisted once (`update_columns(raw)` + `rebake!`) and
+  explicitly reindexed with `SearchIndexer.index(post, force: true)`, since direct
+  writes bypass the normal search callback. Pausing for `ask_user` indexes the partial
+  answer too; resuming indexes the completed answer. A single
+  `publish_change_to_clients!(:revised)` lets non-streaming viewers catch up.
+
+`/search-chats` has a Rails entry route as well as an Ember route, so direct links
+and reloads load the application. Existing answers with stale search data still
+need a search-index rebuild; updating reply persistence does not backfill them.
 
 Tool calls are rendered as a collapsible `[details]` block above the answer; each tool
 shows an icon + name + status + its essential args (a denylist hides noisy args;

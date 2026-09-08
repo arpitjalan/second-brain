@@ -24,22 +24,20 @@ module ::SecondBrain
       Jobs.enqueue(:second_brain_reply, post_id: post.id)
     end
 
-    # Find-or-create stan's "Thinking…" placeholder in a chat. Called from the
-    # create controller (so the chat is alive the instant the member lands) AND
-    # from the reply job. The lock makes the find-or-create atomic across the
-    # request/job boundary — without it, the job's SELECT can run before the
-    # controller's INSERT commits, so both create one and the chat ends up with
-    # a second, orphaned "Thinking…" post that never resolves.
-    def self.ensure_placeholder(topic, agent = Agent.for_topic(topic))
-      thinking = I18n.t("second_brain.thinking")
+    # The controller and job share a reply for this message, even if the job
+    # finishes first. Other messages in the topic must get their own reply.
+    def self.ensure_placeholder(post, agent = Agent.for_topic(post.topic))
+      topic = post.topic
       bot = agent&.user || Bot.user
-      DistributedMutex.synchronize("second-brain-placeholder-#{topic.id}") do
-        topic
-          .posts
-          .where(user_id: bot.id, raw: thinking)
-          .order(post_number: :desc)
-          .first ||
-          PostCreator.create!(bot, topic_id: topic.id, raw: thinking, skip_validations: true)
+      DistributedMutex.synchronize("second-brain-placeholder-#{post.id}") do
+        topic.posts.find_by(user_id: bot.id, reply_to_post_number: post.post_number) ||
+          PostCreator.create!(
+            bot,
+            topic_id: topic.id,
+            reply_to_post_number: post.post_number,
+            raw: I18n.t("second_brain.thinking"),
+            skip_validations: true,
+          )
       end
     end
 
@@ -105,7 +103,7 @@ module ::SecondBrain
 
       # Reuse the placeholder the create controller already spawned (or make one
       # if this is a follow-up turn) and stream term-llm's answer into it.
-      placeholder = self.class.ensure_placeholder(@topic, @agent)
+      placeholder = self.class.ensure_placeholder(@post, @agent)
 
       # Show a breathing, self-narrating indicator until the answer starts.
       publish_cooked(placeholder, thinking_html(nil), done: false)
@@ -227,7 +225,7 @@ module ::SecondBrain
 
       # respond! paints the not-yet-resolved "Thinking…" placeholder; resume!
       # works the bot post itself.
-      post = resume ? @post : self.class.ensure_placeholder(@topic, @agent)
+      post = resume ? @post : self.class.ensure_placeholder(@post, @agent)
       return if post.nil?
       finalize(post, I18n.t("second_brain.errors.reply_failed"), [])
     rescue => e
@@ -464,8 +462,7 @@ module ::SecondBrain
 
       body = render_reply(pre_text, pre_tools)
       body = I18n.t("second_brain.askuser.waiting") if body.blank?
-      post.update_columns(raw: body)
-      post.rebake!
+      persist_reply(post, body)
       post.custom_fields[ASK_FIELD] = public_state.to_json
       post.custom_fields[STATE_FIELD] = server_state.to_json
       post.save_custom_fields(true)
@@ -487,11 +484,17 @@ module ::SecondBrain
     def finalize(post, text, tools)
       final = render_reply(text, tools)
       final = I18n.t("second_brain.empty_reply") if final.blank?
-      post.update_columns(raw: final)
-      post.rebake!
+      persist_reply(post, final)
       publish_stream(post, final, done: true)
       post.publish_change_to_clients!(:revised)
       @finalized = true
+    end
+
+    def persist_reply(post, raw)
+      post.update_columns(raw: raw)
+      post.rebake!
+      # Direct writes and rebaking bypass Post's search-index callback.
+      SearchIndexer.index(post, force: true)
     end
 
     def parse_json(raw)
@@ -750,6 +753,7 @@ module ::SecondBrain
         @topic
           .posts
           .where(post_type: Post.types[:regular])
+          .where("posts.post_number <= ?", @post.post_number)
           .order(:post_number)
           .pluck(:user_id, :raw)
           .filter_map do |user_id, raw|

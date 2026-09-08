@@ -23,6 +23,54 @@ describe SecondBrain::ChatsController do
     )
   end
 
+  describe "#index" do
+    it "serves the application when the search page is opened directly" do
+      sign_in(owner)
+
+      get "/search-chats"
+
+      expect(response.status).to eq(200)
+      expect(response.media_type).to eq("text/html")
+      expect(response.body).to include('id="main-outlet"')
+    end
+
+    it "requires login for the search page" do
+      get "/search-chats"
+
+      expect(response.status).to eq(404)
+    end
+  end
+
+  describe "topic agent identity" do
+    it "includes only the agent's display identity for family and personal chats" do
+      sign_in(owner)
+
+      [SecondBrain::Bot.user, personal_bot].each do |agent_user|
+        topic = Fabricate(:private_message_topic, user: owner, recipient: agent_user)
+        Fabricate(:post, topic: topic, user: owner)
+
+        get "/t/#{topic.id}.json"
+
+        expect(response.status).to eq(200)
+        expect(response.parsed_body["second_brain_agent"]).to eq(
+          "username" => agent_user.username,
+          "name" => agent_user.name.presence || agent_user.username,
+        )
+      end
+    end
+
+    it "leaves human conversations without an agent identity" do
+      sign_in(owner)
+      topic = Fabricate(:private_message_topic, user: owner, recipient: other)
+      Fabricate(:post, topic: topic, user: owner)
+
+      get "/t/#{topic.id}.json"
+
+      expect(response.status).to eq(200)
+      expect(response.parsed_body["second_brain_agent"]).to be_nil
+    end
+  end
+
   describe "GET /second-brain/agents" do
     it "lists the family agent + the member's own personal agent" do
       sign_in(owner)

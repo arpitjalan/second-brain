@@ -4,6 +4,11 @@ module ::SecondBrain
   class ChatsController < ::ApplicationController
     requires_plugin "second-brain"
     requires_login
+    skip_before_action :check_xhr, only: :index
+
+    def index
+      render "default/empty"
+    end
 
     # Start a chat with one message — no title/recipient friction. We create the
     # PM with the bot, derive a throwaway title from the message (term-llm renames
@@ -30,7 +35,7 @@ module ::SecondBrain
       # Spawn the bot's "Thinking…" placeholder now so the chat is alive the instant
       # the member lands in the PM — instead of dead-air until the reply job
       # (Sidekiq pickup) gets around to creating it.
-      BotResponder.ensure_placeholder(post.topic, agent)
+      BotResponder.ensure_placeholder(post, agent)
 
       render json: { url: post.topic.relative_url }
     end

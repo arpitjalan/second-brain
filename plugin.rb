@@ -72,7 +72,19 @@ after_initialize do
     include_condition: -> { post_custom_fields.key?("second_brain_askuser") },
   ) { JSON.parse(post_custom_fields["second_brain_askuser"]) rescue nil }
 
+  add_to_serializer(
+    :topic_view,
+    :second_brain_agent,
+    include_condition: -> { object.topic.private_message? },
+  ) do
+    agent = SecondBrain::Agent.for_topic(object.topic)
+    if agent&.user
+      { username: agent.user.username, name: agent.user.name.presence || agent.user.username }
+    end
+  end
+
   Discourse::Application.routes.append do
+    get "/search-chats" => "second_brain/chats#index"
     # Search the member's own bot chats (+ shared public chats).
     get "/second-brain/search" => "second_brain/chats#search"
     # The agents this member may chat with (family + their own) — for the switcher.
