@@ -12,6 +12,7 @@ register_asset "stylesheets/common/second-brain.scss"
 
 register_svg_icon "paper-plane"
 register_svg_icon "globe"
+register_svg_icon "book-open"
 register_svg_icon "puzzle-piece"
 register_svg_icon "arrows-rotate"
 register_svg_icon "up-right-from-square"
@@ -36,14 +37,17 @@ require_relative "lib/second_brain/term_llm_client"
 require_relative "lib/second_brain/bot"
 require_relative "lib/second_brain/agent"
 require_relative "lib/second_brain/bot_responder"
+require_relative "lib/second_brain/knowledge_draft"
 
 after_initialize do
   # app/ classes inherit Rails base classes at load time, so require them here
   # (after the app — ApplicationController, ActiveRecord::Base, Jobs::Base — has loaded).
   require_relative "app/models/second_brain/agent_record"
   require_relative "app/jobs/regular/second_brain_reply"
+  require_relative "app/jobs/regular/second_brain_knowledge_draft"
   require_relative "app/jobs/scheduled/second_brain_watchdog"
   require_relative "app/controllers/second_brain/chats_controller"
+  require_relative "app/controllers/second_brain/knowledge_controller"
   require_relative "app/controllers/second_brain/widgets_controller"
 
   # Chats are PMs with the bot user. When a family member posts in such a PM,
@@ -59,6 +63,7 @@ after_initialize do
   # Marks a chat that's been published to the family (scopes the shared-chat
   # results in ChatsController#search).
   register_topic_custom_field_type("second_brain_shared", :boolean)
+  register_topic_custom_field_type("second_brain_knowledge_sources", :string)
   register_topic_custom_field_type("second_brain_model", :string)
   register_topic_custom_field_type("second_brain_reasoning_effort", :string)
   register_post_custom_field_type("second_brain_runtime", :string)
@@ -103,11 +108,12 @@ after_initialize do
   end
 
   Discourse::Application.routes.append do
-    get "/search-chats" => "second_brain/chats#index"
     # Search the member's own bot chats (+ shared public chats).
-    get "/second-brain/search" => "second_brain/chats#search"
     # The agents this member may chat with (family + their own) — for the switcher.
     get "/second-brain/agents" => "second_brain/chats#agents"
+    get "/second-brain/knowledge/drafts/:draft_id" => "second_brain/knowledge#status"
+    post "/second-brain/knowledge/draft" => "second_brain/knowledge#draft"
+    post "/second-brain/knowledge" => "second_brain/knowledge#create"
     get "/second-brain/agent-runtime" => "second_brain/chats#agent_runtime"
     # Start a chat from a single message (frictionless homepage box).
     post "/second-brain/chats" => "second_brain/chats#create"

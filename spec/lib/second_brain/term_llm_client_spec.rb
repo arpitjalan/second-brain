@@ -13,6 +13,46 @@ describe SecondBrain::TermLlmClient do
 
   let(:client) { SecondBrain::Agent.family.client }
 
+  describe "#stream_complete" do
+    it "streams cumulative draft text with tools disabled" do
+      frames = ["# Reference\n\n", "First decision.", " Second decision."]
+      body =
+        frames
+          .map { |text| "data: #{{ choices: [{ delta: { content: text } }] }.to_json}\r\n\r\n" }
+          .join + "data: [DONE]\r\n\r\n"
+      stub_request(:post, "http://termllm.test/chat/v1/chat/completions")
+        .with do |request|
+          payload = JSON.parse(request.body)
+          payload["stream"] == true && payload["tool_choice"] == "none"
+        end
+        .to_return(body: body)
+      updates = []
+      result =
+        client.stream_complete([{ role: "user", content: "Summarize" }]) do |text|
+          updates << text.dup
+        end
+      expect(updates).to eq([frames[0], frames.first(2).join, frames.join])
+      expect(result).to eq(frames.join)
+    end
+
+    it "rejects a disconnected stream and upstream error instead of saving partial text" do
+      stub_request(:post, "http://termllm.test/chat/v1/chat/completions").to_return(
+        body: 'data: {"choices":[{"delta":{"content":"Partial"}}]}' + "\n\n",
+      )
+      expect { client.stream_complete([]) { |_| } }.to raise_error(
+        SecondBrain::TermLlmClient::Error,
+        /incomplete/,
+      )
+      stub_request(:post, "http://termllm.test/chat/v1/chat/completions").to_return(
+        body: 'data: {"error":{"message":"upstream failed"}}' + "\n\ndata: [DONE]\n\n",
+      )
+      expect { client.stream_complete([]) { |_| } }.to raise_error(
+        SecondBrain::TermLlmClient::Error,
+        /stream failed/,
+      )
+    end
+  end
+
   describe "#stream_events (resume reconnect)" do
     it "returns the reconnected response_id even when the stream omits response.created" do
       # A reconnect's continuation does NOT re-emit `response.created`; the result

@@ -4,11 +4,6 @@ module ::SecondBrain
   class ChatsController < ::ApplicationController
     requires_plugin "second-brain"
     requires_login
-    skip_before_action :check_xhr, only: :index
-
-    def index
-      render "default/empty"
-    end
 
     def runtime
       topic, agent = runtime_chat
@@ -116,8 +111,7 @@ module ::SecondBrain
 
       category_id = SiteSetting.second_brain_public_category.presence&.to_i
 
-      # Convert + mark-shared together so we never end up public-but-unmarked
-      # (invisible to the shared-chat results in #search).
+      # Preserve the shared-chat identity when converting to a public topic.
       Topic.transaction do
         topic.convert_to_public_topic(Discourse.system_user, category_id: category_id)
         topic.reload
@@ -146,51 +140,6 @@ module ::SecondBrain
             }
           end
       render json: { agents: list }
-    end
-
-    # Full-text search over the member's OWN bot chats (PMs they participate in) +
-    # shared public chats. Privacy is structural: #searchable_topic_ids restricts the
-    # candidate set to the caller's own owner/bot scope, so another member's private
-    # chats are never even searched; every hit is also re-gated through
-    # guardian.can_see?.
-    def search
-      query = params[:q].to_s.strip
-      return render json: { results: [] } if query.length < 2
-
-      ids = searchable_topic_ids
-      return render json: { results: [] } if ids.empty?
-
-      term = Search.prepare_data(query)
-      return render json: { results: [] } if term.blank?
-
-      limit = SiteSetting.second_brain_search_results
-
-      # `Search.ts_query` escapes/unaccents the term and returns a complete
-      # TO_TSQUERY(...) SQL fragment, so this is injection-safe; the topic_id bound
-      # keeps the @@ match tiny. Search bodies (question + answer) of regular,
-      # non-hidden, non-deleted posts only.
-      posts =
-        Post
-          .where(topic_id: ids, post_type: Post.types[:regular], hidden: false, deleted_at: nil)
-          .joins("JOIN post_search_data psd ON psd.post_id = posts.id")
-          .joins(:topic)
-          .where("psd.search_data @@ #{Search.ts_query(term: term)}")
-          .preload(topic: :user)
-          .order("topics.bumped_at DESC, posts.post_number ASC")
-          .limit(limit * 3)
-
-      seen = Set.new
-      results = []
-      posts.each do |post|
-        topic = post.topic
-        next if topic.nil? || seen.include?(topic.id)
-        next unless guardian.can_see?(topic)
-        seen << topic.id
-        results << search_card(post, topic, query)
-        break if results.size >= limit
-      end
-
-      render json: { results: results }
     end
 
     # Answer a pending ask_user prompt from the bot. We submit the answers to
@@ -308,86 +257,10 @@ module ::SecondBrain
       agent
     end
 
-    # The topics #search may look in: the caller's own bot PMs (sb_me restricts to
-    # PMs the caller participates in, sb_bot to bot chats) + public chats shared to
-    # the family. uniq'd id list.
-    def searchable_topic_ids
-      bot_ids_sql = agent_ids_sql(my_agent_bot_ids)
-      me = current_user.id.to_i
-
-      pm_ids =
-        Topic
-          .where(archetype: Archetype.private_message, deleted_at: nil)
-          .joins(
-            "JOIN topic_allowed_users sb_me ON sb_me.topic_id = topics.id AND sb_me.user_id = #{me}",
-          )
-          .joins(
-            "JOIN topic_allowed_users sb_bot ON sb_bot.topic_id = topics.id AND sb_bot.user_id IN (#{bot_ids_sql})",
-          )
-          .pluck(:id)
-
-      public_ids =
-        Topic
-          .where(archetype: Archetype.default, deleted_at: nil, visible: true)
-          .joins(
-            "JOIN topic_custom_fields sb ON sb.topic_id = topics.id AND sb.name = 'second_brain_shared'",
-          )
-          .pluck(:id)
-
-      (pm_ids + public_ids).uniq
-    end
-
-    def search_card(post, topic, query)
-      # blurb_for returns Sanitize.clean output — plain text (tags stripped) with
-      # HTML entities encoded (& -> &amp;, < -> &lt;). The client renders it with
-      # {{card.blurb}}, which escapes AGAIN, so code/URLs/"a & b" would show literal
-      # &amp;/&lt;. Decode once here; the client's single escape then renders it
-      # correctly (still safe — it's plain text, and the client re-escapes).
-      blurb = Search::GroupedSearchResults.blurb_for(cooked: post.cooked, term: query)
-      {
-        title: topic.title,
-        url: "#{topic.relative_url}/#{post.post_number}",
-        username: topic.user&.username,
-        blurb: CGI.unescapeHTML(blurb.to_s),
-        age: short_age(topic.bumped_at),
-      }
-    end
-
-    # Bot user ids whose chats this member may see/search: the shared family agent
-    # + the member's OWN personal agents. Excludes other members' personal bots, so
-    # a non-owner merely invited into a personal-agent PM can't see or search it
-    # (the owner-privacy invariant #answer enforces, applied to listing/search).
-    def my_agent_bot_ids
-      Agent.available_to(current_user).filter_map { |a| a.user&.id }
-    end
-
-    # A safe `IN (...)` list of agent bot user ids (ints; never empty).
-    def agent_ids_sql(ids)
-      list = Array(ids).map(&:to_i)
-      list = [Bot.user.id.to_i] if list.empty?
-      list.join(",")
-    end
-
     def derive_title(message)
       line = message.lines.first.to_s.strip
       line = "New chat" if line.blank?
       line.truncate(80)
-    end
-
-    # Compact relative age ("2m", "3h", "5d", "2w") for the search result cards.
-    def short_age(time)
-      return "" if time.nil?
-      secs = (Time.now - time).to_i
-      return "now" if secs < 60
-      mins = secs / 60
-      return "#{mins}m" if mins < 60
-      hrs = mins / 60
-      return "#{hrs}h" if hrs < 24
-      days = hrs / 24
-      return "#{days}d" if days < 7
-      weeks = days / 7
-      return "#{weeks}w" if weeks < 52
-      "#{days / 365}y"
     end
 
     def parse_state(post, field)

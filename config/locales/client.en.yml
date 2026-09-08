@@ -2,6 +2,28 @@ en:
   js:
     second_brain:
       reply_placeholder: "Message %{name}…"
+      knowledge:
+        action: "Consolidate knowledge"
+        agent: "Summarize with"
+        generate: "Prepare draft"
+        setup: "This conversation will be sent to the agent you choose. Up to 200 posts and 60,000 characters; unfinished replies are excluded."
+        sources: "Source conversations"
+        queued: "Queued for the agent… (%{seconds}s)"
+        generating: "Preparing your draft… (%{seconds}s)"
+        generation_failed: "The agent could not finish this draft. Please try again. Your conversations are unchanged."
+        review: "Review and edit this draft before saving. Only this note will be saved; the original conversations stay unchanged."
+        title: "Title"
+        body: "Reference note"
+        visibility: "Save as"
+        private: "Private note — only me"
+        shared: "Shared topic"
+        category: "Category"
+        shared_hint: "Everyone who can access this category can read the saved note. Review it for private details before saving."
+        source_hint: "Source links are included. Readers still need permission to open the original conversations."
+        save: "Save knowledge"
+        cancel: "Cancel"
+        retry: "Try again"
+        failed: "Could not prepare the draft. Your conversations are unchanged."
       runtime:
         configure: "Model and effort"
         defaults: "Agent default (%{selection})"

@@ -23,20 +23,12 @@ describe SecondBrain::ChatsController do
     )
   end
 
-  describe "#index" do
-    it "serves the application when the search page is opened directly" do
+  describe "removed search page" do
+    it "does not serve the old search page or its endpoint" do
       sign_in(owner)
-
       get "/search-chats"
-
-      expect(response.status).to eq(200)
-      expect(response.media_type).to eq("text/html")
-      expect(response.body).to include('id="main-outlet"')
-    end
-
-    it "requires login for the search page" do
-      get "/search-chats"
-
+      expect(response.status).to eq(404)
+      get "/second-brain/search.json"
       expect(response.status).to eq(404)
     end
   end
@@ -188,99 +180,6 @@ describe SecondBrain::ChatsController do
     end
   end
 
-  describe "GET /second-brain/search" do
-    let(:bot) { SecondBrain::Bot.user }
-
-    before { SearchIndexer.enable }
-
-    # Build a post carrying the unique term and make it searchable.
-    def indexed_post(topic, user, raw)
-      post = Fabricate(:post, topic: topic, user: user, raw: raw)
-      SearchIndexer.index(post.reload, force: true)
-      post
-    end
-
-    def search_as(user, q)
-      sign_in(user)
-      get "/second-brain/search.json", params: { q: q }
-      expect(response.status).to eq(200)
-      response.parsed_body["results"]
-    end
-
-    it "finds the caller's own bot chat by content" do
-      topic = Fabricate(:private_message_topic, user: owner, recipient: bot)
-      indexed_post(topic, owner, "A question about the boilerwarranty please")
-
-      results = search_as(owner, "boilerwarranty")
-      expect(results.map { |r| r["url"] }.join).to include(topic.relative_url)
-    end
-
-    it "never returns another member's bot chat (sb_me anchor)" do
-      other_topic = Fabricate(:private_message_topic, user: other, recipient: bot)
-      indexed_post(other_topic, other, "secret boilerwarranty stuff")
-
-      expect(search_as(owner, "boilerwarranty")).to be_empty
-    end
-
-    it "excludes a personal-agent chat from a non-owner" do
-      topic = Fabricate(:private_message_topic, user: owner, recipient: personal_bot)
-      indexed_post(topic, owner, "private boilerwarranty for the owner")
-
-      expect(search_as(other, "boilerwarranty")).to be_empty
-    end
-
-    it "excludes a personal-agent chat even from a non-owner invited into it" do
-      topic = Fabricate(:private_message_topic, user: owner, recipient: personal_bot)
-      indexed_post(topic, owner, "private boilerwarranty for the owner")
-      Fabricate(:topic_allowed_user, topic: topic, user: other) # invited in later
-
-      expect(search_as(other, "boilerwarranty")).to be_empty
-    end
-
-    it "lets the owner find their own personal-agent chat" do
-      topic = Fabricate(:private_message_topic, user: owner, recipient: personal_bot)
-      indexed_post(topic, owner, "my own boilerwarranty notes")
-
-      expect(search_as(owner, "boilerwarranty").map { |r| r["url"] }.join).to include(
-        topic.relative_url,
-      )
-    end
-
-    it "excludes human-to-human PMs (no bot participant)" do
-      human_pm = Fabricate(:private_message_topic, user: owner, recipient: other)
-      indexed_post(human_pm, owner, "boilerwarranty between two humans")
-
-      expect(search_as(owner, "boilerwarranty")).to be_empty
-    end
-
-    it "includes shared public chats that match, for any member" do
-      shared = Fabricate(:topic, user: owner)
-      shared.custom_fields["second_brain_shared"] = true
-      shared.save_custom_fields(true)
-      indexed_post(shared, owner, "a public boilerwarranty note")
-
-      expect(search_as(other, "boilerwarranty").map { |r| r["url"] }.join).to include(
-        shared.relative_url,
-      )
-    end
-
-    it "dedupes to one card per topic when several posts match" do
-      topic = Fabricate(:private_message_topic, user: owner, recipient: bot)
-      indexed_post(topic, owner, "first boilerwarranty mention")
-      indexed_post(topic, bot, "second boilerwarranty mention")
-
-      expect(search_as(owner, "boilerwarranty").size).to eq(1)
-    end
-
-    it "returns nothing for a query under 2 chars" do
-      expect(search_as(owner, "b")).to eq([])
-    end
-
-    it "handles a query with special characters without erroring" do
-      expect(search_as(owner, "foo & bar :*!")).to eq([])
-    end
-  end
-
   describe "POST /second-brain/answer (live form collapse)" do
     fab!(:topic) { Fabricate(:private_message_topic, user: owner, recipient: personal_bot) }
     fab!(:bot_post) { Fabricate(:post, topic: topic, user: personal_bot) }
@@ -289,7 +188,14 @@ describe SecondBrain::ChatsController do
       bot_post.custom_fields["second_brain_askuser"] = {
         call_id: "call_1",
         status: "pending",
-        questions: [{ header: "Vibe", question: "What vibe?", options: [{ label: "Outdoors" }], multi_select: false }],
+        questions: [
+          {
+            header: "Vibe",
+            question: "What vibe?",
+            options: [{ label: "Outdoors" }],
+            multi_select: false,
+          },
+        ],
       }.to_json
       bot_post.custom_fields["second_brain_askuser_state"] = {
         session_id: "sb_#{topic.id}",
@@ -299,10 +205,15 @@ describe SecondBrain::ChatsController do
       }.to_json
       bot_post.save_custom_fields(true)
 
-      stub_request(:post, "http://personal.test/chat/v1/sessions/sb_#{topic.id}/ask_user").to_return(
+      stub_request(
+        :post,
+        "http://personal.test/chat/v1/sessions/sb_#{topic.id}/ask_user",
+      ).to_return(
         status: 200,
         body: { status: "ok", summary: "Vibe: Outdoors" }.to_json,
-        headers: { "Content-Type" => "application/json" },
+        headers: {
+          "Content-Type" => "application/json",
+        },
       )
     end
 
@@ -315,7 +226,11 @@ describe SecondBrain::ChatsController do
       messages =
         MessageBus.track_publish("/second-brain/askuser") do
           post "/second-brain/answer.json",
-               params: { post_id: bot_post.id, call_id: "call_1", answers: [{ selected: "Outdoors" }] },
+               params: {
+                 post_id: bot_post.id,
+                 call_id: "call_1",
+                 answers: [{ selected: "Outdoors" }],
+               },
                as: :json
         end
 
@@ -331,9 +246,19 @@ describe SecondBrain::ChatsController do
     # term-llm semantics the run continues after a cancel).
     it "cancels the question (skipped) with no answers and still enqueues the resume" do
       sign_in(owner)
-      expect_enqueued_with(job: :second_brain_reply, args: { post_id: bot_post.id, mode: "resume" }) do
+      expect_enqueued_with(
+        job: :second_brain_reply,
+        args: {
+          post_id: bot_post.id,
+          mode: "resume",
+        },
+      ) do
         post "/second-brain/answer.json",
-             params: { post_id: bot_post.id, call_id: "call_1", cancelled: true },
+             params: {
+               post_id: bot_post.id,
+               call_id: "call_1",
+               cancelled: true,
+             },
              as: :json
       end
 

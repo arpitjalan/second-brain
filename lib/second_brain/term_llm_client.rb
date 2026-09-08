@@ -119,15 +119,65 @@ module ::SecondBrain
     end
 
     # Simpler non-agentic completion via /v1/chat/completions (used for titling).
-    def complete(messages)
+    def complete(messages, tool_choice: nil)
       raise NotConfigured if base_url.blank?
 
       body = { messages: messages, stream: false }
+      body[:tool_choice] = tool_choice if tool_choice
       model = @agent&.model.presence || SiteSetting.second_brain_term_llm_model
       body[:model] = model if model.present?
 
       response = post_json("/v1/chat/completions", body)
       response.dig("choices", 0, "message", "content").to_s
+    end
+
+    def stream_complete(messages)
+      raise NotConfigured if base_url.blank?
+      uri = parse_uri("#{base_url}/v1/chat/completions")
+      request = Net::HTTP::Post.new(uri)
+      request["Content-Type"] = "application/json"
+      request["Accept"] = "text/event-stream"
+      auth(request)
+      body = { messages: messages, stream: true, tool_choice: "none" }
+      model = @agent&.model.presence || SiteSetting.second_brain_term_llm_model
+      body[:model] = model if model.present?
+      request.body = body.to_json
+      text = +""
+      buffer = +""
+      complete = false
+      build_http(uri, read_timeout: stream_idle_timeout).request(request) do |response|
+        unless response.is_a?(Net::HTTPSuccess)
+          raise Error, "term-llm returned HTTP #{response.code}"
+        end
+        response.read_body do |chunk|
+          buffer << chunk
+          buffer.gsub!("\r\n", "\n")
+          while (index = buffer.index("\n\n"))
+            _, _, data = parse_sse_frame(buffer.slice!(0, index + 2))
+            next unless data
+            if data == "[DONE]"
+              complete = true
+              next
+            end
+            event = JSON.parse(data)
+            raise Error, "term-llm stream failed" if event["error"]
+            delta = event.dig("choices", 0, "delta", "content")
+            if delta.is_a?(String)
+              text << delta
+              yield text
+            end
+          end
+        end
+      end
+      raise Error, "incomplete term-llm stream" unless complete && text.present?
+      text
+    rescue JSON::ParserError,
+           SocketError,
+           SystemCallError,
+           IOError,
+           Timeout::Error,
+           OpenSSL::SSL::SSLError => error
+      raise Error, error.message
     end
 
     def models

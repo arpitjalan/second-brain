@@ -1,7 +1,6 @@
 en:
   site_settings:
     second_brain_enabled: "Enable Second Brain — the personal knowledge organizer reskin."
-    second_brain_search_results: "How many results the \"Search AI chats\" page shows."
     second_brain_term_llm_url: "Base URL of your term-llm server, including its base path (e.g. https://brain.example.com/ui). The plugin calls its OpenAI-compatible API server-side."
     second_brain_term_llm_api_key: "Bearer token for the term-llm server (sent server-side only; never exposed to the browser)."
     second_brain_term_llm_model: "Model to request from term-llm. Leave blank to use term-llm's default."
@@ -15,7 +14,10 @@ en:
     askuser:
       waiting: "_I need a bit more info to help — please answer below._"
       interrupted: "_⚠️ I lost the connection before I could finish. Ask me again to continue._"
+    knowledge:
+      source: "[Source conversation %{number}](%{url}) · Access to the original conversation is required."
     errors:
+      knowledge_too_large: "This conversation is too large to consolidate (maximum 200 posts and 60,000 characters)."
       runtime_unavailable: "Could not load model settings from the agent. Please try again."
       widget_unavailable: "Could not reach the widget. Please try refreshing."
       not_configured: "term-llm is not configured. Set the term-llm URL in site settings."

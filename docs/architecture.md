@@ -99,9 +99,9 @@ request storm). Instead:
   answer too; resuming indexes the completed answer. A single
   `publish_change_to_clients!(:revised)` lets non-streaming viewers catch up.
 
-`/search-chats` has a Rails entry route as well as an Ember route, so direct links
-and reloads load the application. Existing answers with stale search data still
-need a search-index rebuild; updating reply persistence does not backfill them.
+Knowledge consolidation opens from the footer of an AI PM. It has no standalone
+page or sidebar entry. Existing answers with stale search data still need a
+search-index rebuild; updating reply persistence does not backfill them.
 
 Tool calls are rendered as a collapsible `[details]` block above the answer; each tool
 shows an icon + name + status + its essential args (a denylist hides noisy args;
@@ -146,7 +146,7 @@ environment, never in the skill file or the conversation.
 | `lib/second_brain/bot.rb` | Find/create the bot user from `second_brain_bot_username` |
 | `lib/second_brain/bot_responder.rb` | Core: guards, turn claim, transcript, streaming (per-turn session id + a heartbeat that keeps `updated_at` fresh), tool rendering, auto-title, ask_user pause/`resume!`, `abort_with_failure!` (surface unexpected errors), `reconcile_stranded!` (watchdog), `supersede_pending_question!`, widget-link rewrite, forum context |
 | `lib/second_brain/term_llm_client.rb` | HTTP client to term-llm: `stream_respond` (agentic SSE), `stream_events` (resume reconnect), `submit_ask_user`, `respond`, `complete` (titling), SSE parsing; the streaming `read_timeout` is the configurable `second_brain_stream_idle_timeout` (idle timeout) |
-| `app/controllers/second_brain/chats_controller.rb` | `create` (start a chat PM, agent-aware), `make_public` (convert PM → public topic), `agents` (list agents for the switcher), `search` (the "Search AI chats" page), `answer` (resume an `ask_user` run) |
+| `app/controllers/second_brain/chats_controller.rb` | `create` (start a chat PM, agent-aware), `make_public` (convert PM → public topic), `agents` (list agents for the switcher), `answer` (resume an `ask_user` run) |
 | `app/controllers/second_brain/widgets_controller.rb` | Widget reverse proxy (`#show`) + listing (`#index`) |
 | `lib/second_brain/agent.rb` | `SecondBrain::Agent` abstraction — family + personal agents, resolution, per-agent client/token/model |
 | `app/models/second_brain/agent_record.rb` | `second_brain_agents` registry model |

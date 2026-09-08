@@ -145,6 +145,29 @@ New agent replies show the model and effort reported by term-llm. When effort is
 reported, the label shows only the model. Models without advertised effort choices
 keep the default. Older individual replies are not backfilled.
 
+### Consolidate knowledge from an AI conversation
+
+Use **Consolidate knowledge** in an AI private message’s footer to turn the
+conversation into a reference note. This dialog is available only within AI PMs;
+there is no separate search or consolidation page. Choose an agent; the
+summarizer identifies the useful knowledge and supplies a
+title automatically. The conversation's questions and answers are sent to
+that agent with tools disabled. The draft combines decisions, preserves corrections,
+flags unresolved conflicts, and cites its sources. Generation runs in a background
+job so a slow model does not hold open a web request. The dialog shows elapsed
+time and a live text preview, then opens the editable draft for review. Temporary
+drafts expire after one hour; closing the dialog stops progress updates. Review
+and edit before saving.
+
+A conversation can contain at most 200 visible regular posts and 60,000 source
+characters. Larger conversations are rejected rather than silently truncated. Deleted,
+hidden and unfinished replies are excluded. Drafting does not create a topic.
+
+Save privately as a message to yourself, or choose **Shared topic** and a category.
+Source access is checked again on save, and the original conversations retain their
+permissions. Source links do not grant access to private chats. This MVP creates a
+new reference; later edits use Discourse's editor and revision history.
+
 ### Going private (before inviting real family)
 
 Two one-shot rake tasks (auto-loaded by Discourse):
