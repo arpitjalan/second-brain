@@ -22,7 +22,7 @@ Two independent directions, wired separately:
 ```
 
 - **Discourse** runs on the host dev server (`localhost:3000`), with this plugin
-  symlinked into `plugins/second-brain`.
+  symlinked into `plugins/discourse-steward`.
 - **stan** is a local `term-llm contain` Docker container serving its web API on
   `:8081` under base path `/chat`.
 - **A (chat):** the plugin (`TermLlmClient`) calls `http://localhost:8081/chat/v1/responses`.
@@ -36,7 +36,7 @@ The two directions have *different* addressing problems, so set them up separate
 ## Prerequisites
 
 - Discourse dev checkout running (`cd ~/discourse && bin/dev`) on `localhost:3000`.
-- This plugin symlinked into `~/discourse/plugins/second-brain` and enabled.
+- This plugin symlinked into `~/discourse/plugins/discourse-steward` and enabled.
 - A local term-llm `contain` instance running (the `stan` container). Create one with
   `term-llm contain new stan && term-llm contain start stan`, then confirm with
   `docker ps` — you should see `term-llm-contain-stan-app-1` (serving `:8081`).
@@ -139,7 +139,7 @@ volume (`/home/agent`). Drop the skill in:
 ```bash
 docker exec -u agent "$CONTAINER" mkdir -p /home/agent/.config/term-llm/skills/discourse
 docker exec -i -u agent "$CONTAINER" sh -c 'cat > /home/agent/.config/term-llm/skills/discourse/SKILL.md' \
-  < ~/work/second-brain/term-llm/skills/discourse/SKILL.md
+  < ~/work/discourse-steward/term-llm/skills/discourse/SKILL.md
 ```
 
 > Skills are scanned **once at serve startup**, so this needs a restart (B5) to be
@@ -187,7 +187,7 @@ for it.
 1. **Run the forwarder on the host** (gateway:3000 → loopback:3000). Keep it running
    for your dev session:
    ```bash
-   nohup python3 ~/work/second-brain/scripts/dev-discourse-forwarder.py "$GW" 3000 127.0.0.1 3000 \
+   nohup python3 ~/work/discourse-steward/scripts/dev-discourse-forwarder.py "$GW" 3000 127.0.0.1 3000 \
      > /tmp/sb-fwd.log 2>&1 &
    ```
 

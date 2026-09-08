@@ -26,11 +26,11 @@ term-llm widgets are LLM-generated mini-apps (some are live servers, e.g.
   the widget at `/second-brain/widgets/<path>` (the **Discourse origin**),
   `requires_login`, injects the term-llm Bearer token server-side, and sets a
   permissive `WIDGET_CSP`.
-- Iframe: `assets/javascripts/discourse/api-initializers/second-brain-widgets.js`
+- Iframe: `assets/javascripts/discourse/api-initializers/discourse-steward-widgets.js`
   — `frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups")`.
 - Link rewriting: `lib/second_brain/bot_responder.rb#proxy_widget_links`
   rewrites `…/widgets/…` → `/second-brain/widgets/…`.
-- Sidebar list: `…/api-initializers/second-brain-widgets-sidebar.js` +
+- Sidebar list: `…/api-initializers/discourse-steward-widgets-sidebar.js` +
   `WidgetsController#index`.
 
 Because the iframe's origin **is** Discourse's origin and `allow-same-origin`
@@ -188,7 +188,7 @@ Verified findings that were deferred for design/tests — now done:
   + idempotent `resume!` (`claim_resume!`) + error-surfacing reply job
   (`abort_with_failure!`).
 
-Plugin suite: `bin/rspec plugins/second-brain/spec` (run from the Discourse checkout).
+Plugin suite: `bin/rspec plugins/discourse-steward/spec` (run from the Discourse checkout).
 
 The original sweep: 45 findings → 33 real → 19 low-hanging, all fixed as of commit
 `7eceff3`.

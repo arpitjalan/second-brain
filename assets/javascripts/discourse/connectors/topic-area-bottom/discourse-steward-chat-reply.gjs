@@ -16,7 +16,7 @@ import SbChatRuntime from "../../components/sb-chat-runtime";
 // A frictionless inline reply box at the bottom of a chat (a PM). Type and
 // send — no composer. The post is created via the API and appended to the
 // stream; the bot's reply then streams in below it like any other post.
-export default class SecondBrainChatReply extends Component {
+export default class DiscourseStewardChatReply extends Component {
   @tracked value = "";
   @tracked submitting = false;
   @tracked attachments = [];

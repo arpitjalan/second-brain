@@ -13,7 +13,7 @@ module ::SecondBrain
   # with that agent's token. This keeps the token out of the browser, and a
   # personal agent's widgets private to their owner.
   class WidgetsController < ::ApplicationController
-    requires_plugin "second-brain"
+    requires_plugin "discourse-steward"
     requires_login
     skip_before_action :check_xhr, only: %i[show], raise: false
     # Widget scripts do not send Discourse's CSRF token. Check browser origin

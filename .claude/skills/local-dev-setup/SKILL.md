@@ -1,6 +1,6 @@
 ---
 name: local-dev-setup
-description: "Set up or repair the local dev environment for the second-brain Discourse plugin and its term-llm bot (stan) — chat plus forum actions. Use when the user asks to set up local dev, connect Discourse to a local stan, wire up forum actions, get the bot acting on the forum, fix the stan↔Discourse connection, or 'do that setup again'."
+description: "Set up or repair the local dev environment for the discourse-steward plugin and its term-llm bot (stan) — chat plus forum actions. Use when the user asks to set up local dev, connect Discourse to a local stan, wire up forum actions, get the bot acting on the forum, fix the stan↔Discourse connection, or 'do that setup again'."
 ---
 
 # Local dev setup (Discourse ⇄ term-llm "stan")

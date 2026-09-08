@@ -2,7 +2,7 @@
 
 module ::SecondBrain
   class KnowledgeController < ::ApplicationController
-    requires_plugin "second-brain"
+    requires_plugin "discourse-steward"
     requires_login
 
     MAX_POSTS = 200

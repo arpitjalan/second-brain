@@ -1,6 +1,6 @@
 # Architecture
 
-A high-level map of how the **second-brain** plugin works. For local setup see
+A high-level map of how the **discourse-steward** plugin works. For local setup see
 [local-dev.md](local-dev.md); for repo orientation see [../CLAUDE.md](../CLAUDE.md).
 
 ## What it is
@@ -74,7 +74,7 @@ There are **two independent integration directions**, wired separately:
    chat from the first message (guarded by a topic custom field so it runs once).
 
 The user can also reply inline from the chat via the box in
-`connectors/topic-area-bottom/second-brain-chat-reply.gjs` (posts via the API and
+`connectors/topic-area-bottom/discourse-steward-chat-reply.gjs` (posts via the API and
 appends to the stream) instead of the native composer.
 The topic serializer supplies `second_brain_agent` (display name and username only)
 so the reply box and Make public button recognize both family and personal agents.
@@ -88,7 +88,7 @@ request storm). Instead:
   `/second-brain/stream`, scoped to the PM's participants (`user_ids:`), throttled
   (`STREAM_THROTTLE`) but flushed immediately on tool start/finish. No DB write per
   tick. (`BotResponder#publish_stream`.)
-- **Client** (`api-initializers/second-brain-stream.js`) subscribes and **morphs the
+- **Client** (`api-initializers/discourse-steward-stream.js`) subscribes and **morphs the
   live `.cooked` DOM** via morphlex (`morphInner`) while streaming — like Discourse's
   own AI streamer — and `preventCloak`s the post so it stays rendered. It sets the
   **post model's `cooked`** only on the final message (and as a fallback when the post
@@ -121,7 +121,7 @@ them directly (cross-site, needs term-llm's Bearer token), so:
   that already carry one; otherwise the widget's inline scripts are blocked). For a
   personal agent it also calls `#rewrite_widget_base` to rebind the widget's absolute
   HTML refs to its own agent-scoped prefix.
-- The client (`api-initializers/second-brain-widgets.js`) embeds proxied links as
+- The client (`api-initializers/discourse-steward-widgets.js`) embeds proxied links as
   sandboxed iframes; a sidebar section (`…-widgets-sidebar.js`) lists widgets from
   `widgets#index` at `GET /second-brain/list-widgets`, which aggregates each available
   agent's `/admin/widgets/status`.
@@ -152,14 +152,14 @@ environment, never in the skill file or the conversation.
 | `app/models/second_brain/agent_record.rb` | `second_brain_agents` registry model |
 | `app/jobs/regular/second_brain_reply.rb` | Runs `respond!`/`resume!` off-request; on an unexpected error surfaces a failure on the post via `abort_with_failure!` + logs a greppable tag, but never re-raises (no retry storm) |
 | `app/jobs/scheduled/second_brain_watchdog.rb` | Periodic backstop (every 5m): finalizes turns stranded by a hard worker kill (still on "Thinking…", or answered-but-unfinalized) past a derived cutoff, via `BotResponder#reconcile_stranded!` — **never calls term-llm** |
-| `assets/javascripts/.../second-brain-stream.js` | Streams cooked HTML into the post by morphing the live `.cooked` DOM (morphlex) |
+| `assets/javascripts/.../discourse-steward-stream.js` | Streams cooked HTML into the post by morphing the live `.cooked` DOM (morphlex) |
 | `assets/javascripts/.../second-brain-widgets*.js` | Iframe decorator + widgets sidebar |
-| `assets/javascripts/.../second-brain-make-public.js` | "Make public" topic footer button |
+| `assets/javascripts/.../discourse-steward-make-public.js` | "Make public" topic footer button |
 | `assets/javascripts/.../components/launcher.gjs` | Homepage "message stan" launcher |
-| `assets/javascripts/.../connectors/topic-area-bottom/second-brain-chat-reply.gjs` | Inline chat reply box |
-| `assets/stylesheets/common/second-brain.scss` | Chat/homepage styling, forum-chrome trimming |
+| `assets/javascripts/.../connectors/topic-area-bottom/discourse-steward-chat-reply.gjs` | Inline chat reply box |
+| `assets/stylesheets/common/discourse-steward.scss` | Chat/homepage styling, forum-chrome trimming |
 | `config/settings.yml` | Site settings (term-llm URL/token/model, bot username, categories, feature flags) |
-| `lib/tasks/second_brain.rake` | `rake second_brain:setup` (calm-layout seeding) + `:lockdown` (login_required/invite_only/noindex) |
+| `lib/tasks/second_brain.rake` | `rake discourse_steward:setup` (calm-layout seeding) + `:lockdown` (login_required/invite_only/noindex) |
 | `db/migrate/*` | Real schema only (the `second_brain_agents` registry table) |
 | `term-llm/skills/discourse/SKILL.md` | The bot-side skill for forum actions |
 
@@ -194,7 +194,7 @@ environment, never in the skill file or the conversation.
   mid-flight (OOM/deploy) → reconciled by the watchdog.
 - **Custom homepage** via the core `:custom_homepage_enabled` modifier rendering the
   `custom-homepage` plugin outlet (not a theme, not the Blocks API).
-- **Calm defaults, never clobbered.** `rake second_brain:setup` seeds the calm
+- **Calm defaults, never clobbered.** `rake discourse_steward:setup` seeds the calm
   layout (welcome banner off, top menu collapsed, chat off, reactions on) only if a
   setting is still at its factory default (`ON CONFLICT DO NOTHING`), so it never
   overrides an admin's later choices. It's a rake task, not a migration — seeding

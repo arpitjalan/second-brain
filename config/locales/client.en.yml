@@ -1,6 +1,7 @@
 en:
   js:
     second_brain:
+      product_name: "Discourse Steward"
       reply_placeholder: "Message %{name}…"
       knowledge:
         action: "Consolidate knowledge"

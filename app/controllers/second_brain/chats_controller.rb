@@ -2,7 +2,7 @@
 
 module ::SecondBrain
   class ChatsController < ::ApplicationController
-    requires_plugin "second-brain"
+    requires_plugin "discourse-steward"
     requires_login
 
     def runtime

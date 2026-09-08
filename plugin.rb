@@ -1,14 +1,16 @@
 # frozen_string_literal: true
 
-# name: second-brain
-# about: Turns Discourse into a personal knowledge organizer — a clean, Notion-like "second brain". Notes are topics; capture is frictionless.
-# version: 0.1.0
+# name: discourse-steward
+# about: Discourse Steward — private AI conversations, shared knowledge, and interactive widgets powered by term-llm.
+# version: 0.2.0
 # authors: Arpit Jalan
-# url: https://github.com/arpitjalan/second-brain
+# url: https://discourse-steward.netlify.app/
 
+# Persisted settings, data, jobs, and API paths retain their legacy identifiers.
+# See docs/rename.md before changing any second_brain / second-brain keys.
 enabled_site_setting :second_brain_enabled
 
-register_asset "stylesheets/common/second-brain.scss"
+register_asset "stylesheets/common/discourse-steward.scss"
 
 register_svg_icon "paper-plane"
 register_svg_icon "globe"

@@ -1,4 +1,4 @@
-# second-brain — agent guide
+# discourse-steward — agent guide
 
 A Discourse plugin that makes **Discourse the UI for a `term-llm` bot** ("stan") —
 a private, invite-only knowledge base + AI workspace for a small family. Chats are
@@ -7,7 +7,9 @@ widgets, can pause to ask **interactive questions** (`ask_user`), and can act on
 forum (create topics, reply, search). The homepage is a calm launcher with a modern
 signature look.
 
-Start here: **README.md**. Deeper docs: `docs/architecture.md` (how it works),
+Start here: **README.md**. Read `docs/rename.md` before changing legacy identifiers;
+settings, routes, stored data, Ruby classes, and job names intentionally retain
+their old spelling for compatibility. Deeper docs: `docs/architecture.md` (how it works),
 `docs/local-dev.md` (setup + troubleshooting), `docs/ask-user.md` (interactive
 questions protocol).
 
@@ -73,6 +75,6 @@ troubleshooting: `docs/local-dev.md`.
   restart**; JS/SCSS hot-reload.
 - Lint before committing: `cd ~/discourse && bin/lint --fix <files>` (the `.gjs`
   parser only resolves from inside the Discourse checkout via the symlinked path).
-- Tests: `cd ~/discourse && bin/rspec plugins/second-brain/spec` (plugin specs only
+- Tests: `cd ~/discourse && bin/rspec plugins/discourse-steward/spec` (plugin specs only
   resolve from inside the Discourse checkout).
 - Commit only when the user asks.

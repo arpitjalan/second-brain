@@ -45,7 +45,14 @@ say()  { printf '\n\033[1;36m== %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m! %s\033[0m\n' "$*" >&2; }
 die()  { printf '\033[1;31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 
-PLUGIN_DIR="${PLUGIN_DIR:-$HOME/work/second-brain}"
+# Find this checkout regardless of its name; preserve standalone-script defaults.
+if [ -z "${PLUGIN_DIR:-}" ]; then
+  PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  if [ ! -f "$PLUGIN_DIR/plugin.rb" ]; then
+    PLUGIN_DIR="$HOME/work/discourse-steward"
+    [ -d "$PLUGIN_DIR" ] || PLUGIN_DIR="$HOME/work/second-brain"
+  fi
+fi
 RAW_BASE="${RAW_BASE:-https://raw.githubusercontent.com/arpitjalan/second-brain/main}"
 
 # --- 0. parse args ------------------------------------------------------------
@@ -159,7 +166,7 @@ else
   AUTH=""; [ -n "${GITHUB_TOKEN:-}" ] && AUTH="-H \"Authorization: token $GITHUB_TOKEN\""
   sssh "$SERVER_TARGET" "curl -fsSL $AUTH '$RAW_BASE/term-llm/skills/dv/SKILL.md' -o ~/.config/term-llm/skills/dv/SKILL.md" \
     || die "Couldn't fetch the dv skill onto the server. If the repo is private, set GITHUB_TOKEN
-  (a PAT with repo read), or run this from a second-brain checkout (set PLUGIN_DIR)."
+  (a PAT with repo read), or run this from a discourse-steward checkout (set PLUGIN_DIR)."
   echo "fetched on the server from GitHub"
 fi
 sssh "$SERVER_TARGET" 'grep -q "^name: dv" ~/.config/term-llm/skills/dv/SKILL.md' \

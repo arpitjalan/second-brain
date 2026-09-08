@@ -28,7 +28,14 @@ say() { printf '\n\033[1;36m== %s\033[0m\n' "$*"; }
 die() { printf '\033[1;31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 
 DISCOURSE_DIR="${DISCOURSE_DIR:-$HOME/discourse}"
-PLUGIN_DIR="${PLUGIN_DIR:-$HOME/work/second-brain}"
+# Find this checkout regardless of its name; preserve standalone-script defaults.
+if [ -z "${PLUGIN_DIR:-}" ]; then
+  PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  if [ ! -f "$PLUGIN_DIR/plugin.rb" ]; then
+    PLUGIN_DIR="$HOME/work/discourse-steward"
+    [ -d "$PLUGIN_DIR" ] || PLUGIN_DIR="$HOME/work/second-brain"
+  fi
+fi
 
 # Parse args: an optional agent name (positional), --owner USER (personal agent),
 # and --new-key. AGENT defaults to "stan" (the plugin's default bot username).

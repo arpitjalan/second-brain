@@ -714,7 +714,7 @@ module ::SecondBrain
 
     # Playful synonyms for the generic "thinking" state (no tool running yet). We
     # pick one at random per render so even a quick turn varies, and the client
-    # (second-brain-thinking.js) rotates among them every 10s on longer turns.
+    # (discourse-steward-thinking.js) rotates among them every 10s on longer turns.
     THINKING_WORDS = [
       "Thinking",
       "Pondering",

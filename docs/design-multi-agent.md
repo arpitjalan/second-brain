@@ -149,7 +149,7 @@ routing:
    `forum_role: :tl4`).
 4. Bakes the agent's forum creds into its container env (as today).
 
-It also runs `db:migrate` + `rake second_brain:setup` and recommends a
+It also runs `db:migrate` + `rake discourse_steward:setup` and recommends a
 `sudo ufw allow from 172.16.0.0/12 to any port 3000` rule on Linux. So adding a
 personal agent = run the script with `--owner <username>`; **no plugin code
 change.**
@@ -178,7 +178,7 @@ Phase-2 (personal agents) — **shipped:**
 
 - `scripts/setup-local-dev.sh` — `--owner`, TL4 + user-scoped key, registry insert.
 - Launcher switcher + `agent` param; owner-privacy enforcement.
-- `…/api-initializers/second-brain-widgets-sidebar.js` — list widgets grouped by agent (Family / Yours), agent-scoped iframe srcs.
+- `…/api-initializers/discourse-steward-widgets-sidebar.js` — list widgets grouped by agent (Family / Yours), agent-scoped iframe srcs.
 
 ## Phased plan
 

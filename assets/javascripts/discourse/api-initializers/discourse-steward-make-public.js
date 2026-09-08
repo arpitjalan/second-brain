@@ -53,7 +53,7 @@ export default apiInitializer((api) => {
       try {
         const result = await ajax(
           `/second-brain/chats/${topic.id}/make_public`,
-          { type: "POST" },
+          { type: "POST" }
         );
         // Leave the flag set — we're navigating away to the new public topic.
         DiscourseURL.routeTo(result.url);

@@ -1,4 +1,5 @@
 {
+  "name": "discourse-steward",
   "private": true,
   "dependencies": {
     "discourse": "npm:@discourse/types@*"

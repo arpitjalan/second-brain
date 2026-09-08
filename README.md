@@ -1,4 +1,7 @@
-# Second Brain
+# Discourse Steward
+
+Formerly `second-brain`. See [the rename and upgrade notes](docs/rename.md) for
+existing installations and the identifiers retained for compatibility.
 
 A Discourse plugin that turns Discourse into the **private UI for a [term-llm](https://term-llm.com)
 AI assistant** ("stan") — a calm, invite-only knowledge base + AI workspace for a
@@ -63,8 +66,8 @@ fast path.
 ### 1. Get the plugin
 
 ```bash
-git clone <this-repo> ~/work/second-brain
-ln -s ~/work/second-brain ~/discourse/plugins/second-brain
+git clone <this-repo> ~/work/discourse-steward
+ln -s ~/work/discourse-steward ~/discourse/plugins/discourse-steward
 ```
 (The plugin is run **symlinked**. Note: this means Discourse won't autoload its
 `app/` dirs — handled by `require_relative` in `plugin.rb`. Ruby changes need a full
@@ -73,19 +76,19 @@ ln -s ~/work/second-brain ~/discourse/plugins/second-brain
 ### 2. Wire it up (one command)
 
 ```bash
-cd ~/work/second-brain && scripts/setup-local-dev.sh          # agent "stan" (default)
-cd ~/work/second-brain && scripts/setup-local-dev.sh john     # a differently-named agent
-cd ~/work/second-brain && scripts/setup-local-dev.sh stan-arpit --owner arpit  # a personal agent for one member (TL4, private)
+cd ~/work/discourse-steward && scripts/setup-local-dev.sh          # agent "stan" (default)
+cd ~/work/discourse-steward && scripts/setup-local-dev.sh john     # a differently-named agent
+cd ~/work/discourse-steward && scripts/setup-local-dev.sh stan-arpit --owner arpit  # a personal agent for one member (TL4, private)
 ```
 The agent name is an argument (defaults to `stan`) and drives both the container it
 talks to and the Discourse bot username, so nothing is pinned to one name.
 A personal agent needs a `bin/dev` restart to pick up its new DB row.
 This discovers the agent's container + docker network, points the plugin at local stan,
 makes the bot an admin with a Discourse API key, installs the `discourse` skill +
-credentials into stan, seeds the calm forum layout (`rake second_brain:setup`), wires
+credentials into stan, seeds the calm forum layout (`rake discourse_steward:setup`), wires
 the container→host path, and verifies the round-trip.
 (Installing the plugin by hand instead? Run the calm-layout seeding once yourself:
-`cd ~/discourse && bin/rake second_brain:setup` — it's idempotent and only touches
+`cd ~/discourse && bin/rake discourse_steward:setup` — it's idempotent and only touches
 settings still at their factory default.)
 The script is **OS-aware**: on Linux it starts the host forwarder and **prints one
 `sudo ufw` line** it can't run itself — a broad docker-range rule
@@ -174,8 +177,8 @@ Two one-shot rake tasks (auto-loaded by Discourse):
 
 ```bash
 cd ~/discourse
-bin/rake second_brain:setup      # calm layout — idempotent, only touches factory-default settings
-bin/rake second_brain:lockdown   # login_required + invite_only + no search indexing
+bin/rake discourse_steward:setup      # calm layout — idempotent, only touches factory-default settings
+bin/rake discourse_steward:lockdown   # login_required + invite_only + no search indexing
 ```
 
 `setup` runs automatically via `setup-local-dev.sh`; `lockdown` is deliberate
@@ -198,15 +201,15 @@ character in a token won't break shell splitting.
 **Family agent** — endpoint **+ the bot's forum-action key** (one command vs editing settings):
 ```bash
 SB_URL=https://stan.example.com/chat SB_TOKEN=<web-token> \
-  rake second_brain:set_family_agent       # optional: SB_MODEL=gpt-5.5  SB_NEW_KEY=1
+  rake discourse_steward:set_family_agent       # optional: SB_MODEL=gpt-5.5  SB_NEW_KEY=1
 ```
 
 **Personal agents** — register/list/remove (admin-run; idempotent):
 ```bash
 SB_BOT=jarvis SB_OWNER=arpit SB_URL=https://jarvis.example.com/chat SB_TOKEN=<web-token> \
-  rake second_brain:add_agent              # optional: SB_MODEL=gpt-5.5  SB_NEW_KEY=1
-rake second_brain:list_agents              # all agents (tokens masked)
-SB_BOT=jarvis SB_DEACTIVATE=1 rake second_brain:remove_agent
+  rake discourse_steward:add_agent              # optional: SB_MODEL=gpt-5.5  SB_NEW_KEY=1
+rake discourse_steward:list_agents              # all agents (tokens masked)
+SB_BOT=jarvis SB_DEACTIVATE=1 rake discourse_steward:remove_agent
 ```
 
 Both `set_family_agent` and `add_agent` set up **both directions** and print exactly
@@ -238,7 +241,7 @@ what to do next:
 - **Ruby changes** (`plugin.rb`, controllers, jobs, settings) need a full `bin/dev`
   restart; **JS/SCSS hot-reload**.
 - Tests live in `spec/` (RSpec request + lib specs); run from the Discourse
-  checkout, e.g. `cd ~/discourse && bin/rspec plugins/second-brain/spec`.
+  checkout, e.g. `cd ~/discourse && bin/rspec plugins/discourse-steward/spec`.
 - Lint before committing: `cd ~/discourse && bin/lint --fix <files>`. The `.gjs`
   parser only resolves from inside the Discourse checkout (via the symlinked path).
 - The term-llm Bearer token and the bot's Discourse admin key are **secrets** — they

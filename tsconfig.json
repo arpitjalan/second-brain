@@ -3,7 +3,7 @@
   "include": ["assets/javascripts/**/*", "test/javascripts/**/*"],
   "compilerOptions": {
     "paths": {
-      "discourse/plugins/second-brain/*": ["./assets/javascripts/*"]
+      "discourse/plugins/discourse-steward/*": ["./assets/javascripts/*"]
     }
   }
 }

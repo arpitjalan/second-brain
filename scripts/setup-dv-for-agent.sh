@@ -56,7 +56,14 @@ say()  { printf '\n\033[1;36m== %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m! %s\033[0m\n' "$*" >&2; }
 die()  { printf '\033[1;31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 
-PLUGIN_DIR="${PLUGIN_DIR:-$HOME/work/second-brain}"
+# Find this checkout regardless of its name; preserve standalone-script defaults.
+if [ -z "${PLUGIN_DIR:-}" ]; then
+  PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  if [ ! -f "$PLUGIN_DIR/plugin.rb" ]; then
+    PLUGIN_DIR="$HOME/work/discourse-steward"
+    [ -d "$PLUGIN_DIR" ] || PLUGIN_DIR="$HOME/work/second-brain"
+  fi
+fi
 RAW_BASE="${RAW_BASE:-https://raw.githubusercontent.com/arpitjalan/second-brain/main}"
 
 # --- 0. parse args ------------------------------------------------------------
@@ -205,7 +212,7 @@ if [ ! -f "$SKILL_SRC" ]; then
   else
     curl -fsSL "$RAW_BASE/term-llm/skills/dv/SKILL.md" -o "$SKILL_TMP"
   fi || { rm -f "$SKILL_TMP"; die "Couldn't fetch the dv skill from GitHub. If the repo is private,
-  set GITHUB_TOKEN (a PAT with repo read), or run from a second-brain checkout (set PLUGIN_DIR)."; }
+  set GITHUB_TOKEN (a PAT with repo read), or run from a discourse-steward checkout (set PLUGIN_DIR)."; }
   SKILL_SRC="$SKILL_TMP"
 fi
 dexec_in "sh -c 'mkdir -p $AGENT_HOME/.config/term-llm/skills/dv && cat > $AGENT_HOME/.config/term-llm/skills/dv/SKILL.md'" < "$SKILL_SRC"

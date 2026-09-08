@@ -42,8 +42,9 @@ function widgetTitle(href) {
   try {
     const path = new URL(href, window.location.origin).pathname;
     const slug =
-      (path.split(WIDGET_PREFIX_RE)[1] || "").replace(/\/+$/, "").split("/")[0] ||
-      "Widget";
+      (path.split(WIDGET_PREFIX_RE)[1] || "")
+        .replace(/\/+$/, "")
+        .split("/")[0] || "Widget";
     return decodeURIComponent(slug)
       .replace(/[-_]+/g, " ")
       .replace(/\b\w/g, (c) => c.toUpperCase());
@@ -159,19 +160,17 @@ function buildCard(href) {
 export default apiInitializer((api) => {
   api.decorateCookedElement(
     (element) => {
-      element
-        .querySelectorAll(WIDGET_LINK_SELECTOR)
-        .forEach((link) => {
-          if (link.dataset.sbWidget) {
-            return;
-          }
-          const src = safeWidgetPath(link);
-          if (!src) {
-            return;
-          }
-          link.dataset.sbWidget = "1";
-          link.insertAdjacentElement("afterend", buildCard(src));
-        });
+      element.querySelectorAll(WIDGET_LINK_SELECTOR).forEach((link) => {
+        if (link.dataset.sbWidget) {
+          return;
+        }
+        const src = safeWidgetPath(link);
+        if (!src) {
+          return;
+        }
+        link.dataset.sbWidget = "1";
+        link.insertAdjacentElement("afterend", buildCard(src));
+      });
     },
     // onlyStream (like the copy/askuser decorators): widget cards belong in the
     // post stream, not the composer preview — where each debounced re-cook would

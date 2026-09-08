@@ -12,6 +12,7 @@ import { getUploadMarkdown } from "discourse/lib/uploads";
 import DiscourseURL from "discourse/lib/url";
 import { eq } from "discourse/truth-helpers";
 import DButton from "discourse/ui-kit/d-button";
+import { i18n } from "discourse-i18n";
 import SbAttach from "./sb-attach";
 import SbChatRuntime from "./sb-chat-runtime";
 
@@ -256,7 +257,9 @@ export default class Launcher extends Component {
   <template>
     <div class="sb-launcher" {{didInsert this.loadAgents}}>
       <h1 class="sb-launcher__title">
-        {{#if this.currentUser}}{{this.greeting}}{{else}}Your second brain{{/if}}
+        {{#if this.currentUser}}{{this.greeting}}{{else}}{{i18n
+            "second_brain.product_name"
+          }}{{/if}}
       </h1>
       <p class="sb-launcher__subtitle">
         Chat with

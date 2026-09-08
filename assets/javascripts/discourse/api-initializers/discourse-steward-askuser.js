@@ -38,7 +38,11 @@ function optionRow(question, name, opt, onChange) {
 
 function renderForm(container, post, data, botName) {
   const questions = data.questions || [];
-  const answers = questions.map(() => ({ selected: null, custom: "", list: [] }));
+  const answers = questions.map(() => ({
+    selected: null,
+    custom: "",
+    list: [],
+  }));
 
   const form = document.createElement("div");
   form.className = "sb-askuser__form";
@@ -68,9 +72,7 @@ function renderForm(container, post, data, botName) {
     (question.options || []).forEach((opt) => {
       const { label } = optionRow(question, name, opt, () => {
         if (question.multi_select) {
-          answers[qi].list = Array.from(
-            card.querySelectorAll("input:checked")
-          )
+          answers[qi].list = Array.from(card.querySelectorAll("input:checked"))
             .map((i) => i.value)
             .filter((v) => v !== "__other__");
         } else {

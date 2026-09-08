@@ -108,7 +108,7 @@ SKIP   instead of answering, the member sends a NEW message → respond! calls
 | `app/controllers/second_brain/chats_controller.rb` | `answer` — validates, submits to term-llm, marks answered, enqueues the resume job (`410` on expiry) |
 | `app/jobs/regular/second_brain_reply.rb` | `mode: "resume"` → `resume!` |
 | `plugin.rb` | custom-field registration, allowlister + serializer, `POST /second-brain/answer` |
-| `assets/javascripts/.../second-brain-askuser.js` | renders the inline form (radios / checkboxes / "Other"), submits, shows the answered summary / expiry |
+| `assets/javascripts/.../discourse-steward-askuser.js` | renders the inline form (radios / checkboxes / "Other"), submits, shows the answered summary / expiry |
 
 The form is built in the DOM (from the serialized field), never in cooked HTML, so
 the sanitizer never strips it — same pattern as the widget/copy decorators. It

@@ -22,7 +22,7 @@ function loadWidgetsOnce() {
 
 export default apiInitializer((api) => {
   // Personal, authenticated feature — don't register the section (or its fetch,
-  // which anon would 403 on) for logged-out visitors. Matches second-brain-sidebar.
+  // which anon would 403 on) for logged-out visitors.
   if (!api.getCurrentUser()) {
     return;
   }
@@ -41,7 +41,9 @@ export default apiInitializer((api) => {
         const link = event.target.closest("a[href]");
         if (
           link?.closest('[data-section-name="second-brain-widgets"]') &&
-          /\/second-brain\/(agent-)?widgets\//.test(link.getAttribute("href") || "")
+          /\/second-brain\/(agent-)?widgets\//.test(
+            link.getAttribute("href") || ""
+          )
         ) {
           event.preventDefault();
           window.open(link.href, "_blank", "noopener");
@@ -74,7 +76,9 @@ export default apiInitializer((api) => {
         }
 
         get href() {
-          return this.widget.url || `/second-brain/widgets/${this.widget.mount}/`;
+          return (
+            this.widget.url || `/second-brain/widgets/${this.widget.mount}/`
+          );
         }
 
         get prefixType() {

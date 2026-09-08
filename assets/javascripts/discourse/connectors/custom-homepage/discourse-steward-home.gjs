@@ -4,7 +4,7 @@ import Launcher from "../../components/launcher";
 // routes the homepage to discovery/custom, whose `custom-homepage` plugin
 // outlet renders this connector. A chat is a PM with the bot, so the homepage
 // is a launcher; the conversation lives in Discourse's native message view.
-<template>
+export default <template>
   <div class="sb-home">
     <Launcher />
   </div>
