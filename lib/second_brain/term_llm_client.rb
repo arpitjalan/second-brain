@@ -41,7 +41,14 @@ module ::SecondBrain
     # If the agent calls the `ask_user` tool, `ask_user` is { call_id:, questions: }
     # and we disconnect (the run stays alive server-side, keyed by session_id).
     # `session_id` lets a later request answer/resume the run (see submit_ask_user).
-    def stream_respond(messages, session_id: nil, heartbeat: nil, &block)
+    def stream_respond(
+      messages,
+      session_id: nil,
+      heartbeat: nil,
+      model: nil,
+      reasoning_effort: nil,
+      &block
+    )
       raise NotConfigured if base_url.blank?
 
       uri = parse_uri("#{base_url}/v1/responses")
@@ -56,8 +63,9 @@ module ::SecondBrain
         include_server_tools: true,
         stream: true,
       }
-      model = @agent&.model.presence || SiteSetting.second_brain_term_llm_model
+      model = model.presence || @agent&.model.presence || SiteSetting.second_brain_term_llm_model
       body[:model] = model if model.present?
+      body[:reasoning_effort] = reasoning_effort if reasoning_effort.present?
       request.body = body.to_json
 
       run_sse(uri, request, heartbeat: heartbeat, &block)
@@ -85,7 +93,8 @@ module ::SecondBrain
     def submit_ask_user(session_id:, call_id:, answers: nil, cancelled: false)
       raise NotConfigured if base_url.blank?
 
-      body = cancelled ? { call_id: call_id, cancelled: true } : { call_id: call_id, answers: answers }
+      body =
+        cancelled ? { call_id: call_id, cancelled: true } : { call_id: call_id, answers: answers }
       uri = parse_uri("#{base_url}/v1/sessions/#{session_id}/ask_user")
       http = build_http(uri, read_timeout: 30)
       request = Net::HTTP::Post.new(uri)
@@ -121,6 +130,45 @@ module ::SecondBrain
       response.dig("choices", 0, "message", "content").to_s
     end
 
+    def models
+      Array(get_json("/v1/models")["data"]).filter_map do |entry|
+        next unless entry.is_a?(Hash) && entry["id"].is_a?(String)
+        {
+          id: entry["id"],
+          efforts: Array(entry["reasoning_efforts"]).grep(String),
+          default_effort: entry["default_reasoning_effort"].presence,
+        }.compact
+      end
+    end
+
+    def runtime_defaults(models)
+      model = @agent&.model.presence || SiteSetting.second_brain_term_llm_model.presence
+      if model.blank?
+        providers = Array(get_json("/v1/providers", timeout: 3)["data"])
+        model = providers.find { |provider| provider["is_default"] == true }&.dig("default_model")
+      end
+      return {} if model.blank?
+
+      entry = models.find { |candidate| candidate[:id] == model }
+      effort = entry&.dig(:default_effort)
+      unless entry
+        models.each do |candidate|
+          suffix = candidate[:efforts].find { |value| model == "#{candidate[:id]}-#{value}" }
+          next unless suffix
+          model = candidate[:id]
+          effort = suffix
+          break
+        end
+      end
+      { model: model, reasoning_effort: effort }.compact
+    rescue Error
+      {}
+    end
+
+    def session_runtime(session_id)
+      get_json("/v1/sessions/#{session_id}/state", timeout: 3).slice("model", "reasoning_effort")
+    end
+
     private
 
     # Consume an SSE stream (POST /v1/responses or GET …/events). Yields
@@ -142,6 +190,7 @@ module ::SecondBrain
       ask_user = nil
       last_seq = 0
       run_error = nil
+      runtime = {}
 
       begin
         catch(:sb_done) do
@@ -177,18 +226,46 @@ module ::SecondBrain
                 next if data.nil?
 
                 case event
-                when "response.created"
-                  rid = JSON.parse(data).dig("response", "id") rescue nil
-                  response_id = rid if rid
+                when "response.created", "response.completed"
+                  metadata =
+                    begin
+                      JSON.parse(data)["response"]
+                    rescue StandardError
+                      nil
+                    end
+                  if metadata.is_a?(Hash)
+                    response_id = metadata["id"] if event == "response.created" && metadata["id"]
+                    if metadata["model"].is_a?(String)
+                      runtime =
+                        metadata
+                          .slice("model", "reasoning_effort")
+                          .select { |_, value| value.is_a?(String) }
+                    end
+                  end
                 when "response.output_text.delta"
-                  delta = JSON.parse(data)["delta"] rescue nil
+                  delta =
+                    begin
+                      JSON.parse(data)["delta"]
+                    rescue StandardError
+                      nil
+                    end
                   next if delta.nil?
                   text << delta
                   yield text, tools if block_given?
                 when "response.tool_exec.start"
-                  j = JSON.parse(data) rescue {}
+                  j =
+                    begin
+                      JSON.parse(data)
+                    rescue StandardError
+                      {}
+                    end
                   next if j["tool_name"].to_s == "ask_user" # not shown as a normal tool
-                  args = JSON.parse(j["tool_arguments"].to_s) rescue nil
+                  args =
+                    begin
+                      JSON.parse(j["tool_arguments"].to_s)
+                    rescue StandardError
+                      nil
+                    end
                   tools << {
                     call_id: j["call_id"],
                     name: j["tool_name"].to_s,
@@ -199,14 +276,24 @@ module ::SecondBrain
                   }
                   yield text, tools if block_given?
                 when "response.tool_exec.end"
-                  j = JSON.parse(data) rescue {}
+                  j =
+                    begin
+                      JSON.parse(data)
+                    rescue StandardError
+                      {}
+                    end
                   if (t = tools.find { |x| x[:call_id] == j["call_id"] })
                     t[:done] = true
                     t[:success] = j["success"]
                     yield text, tools if block_given?
                   end
                 when "response.ask_user.prompt"
-                  j = JSON.parse(data) rescue {}
+                  j =
+                    begin
+                      JSON.parse(data)
+                    rescue StandardError
+                      {}
+                    end
                   ask_user = { call_id: j["call_id"], questions: j["questions"] }
                   throw :sb_done # disconnect; the run stays alive server-side
                 when "response.failed", "response.cancelled"
@@ -214,7 +301,12 @@ module ::SecondBrain
                   # payload here and then [DONE]; without capturing it the run
                   # would look like a normal (empty or truncated) success. Record
                   # it so the caller can finalize with a clear note instead.
-                  j = JSON.parse(data) rescue {}
+                  j =
+                    begin
+                      JSON.parse(data)
+                    rescue StandardError
+                      {}
+                    end
                   err = j["error"].is_a?(Hash) ? j["error"] : {}
                   run_error = {
                     type: err["type"].presence || event.split(".").last,
@@ -237,6 +329,7 @@ module ::SecondBrain
         response_id: response_id,
         last_seq: last_seq,
         error: run_error,
+        runtime: runtime,
       }
     end
 
@@ -300,6 +393,27 @@ module ::SecondBrain
       t.positive? ? t : 600
     end
 
+    def get_json(path, timeout: 20)
+      raise NotConfigured if base_url.blank?
+      uri = parse_uri("#{base_url}#{path}")
+      request = Net::HTTP::Get.new(uri)
+      auth(request)
+      http = build_http(uri, read_timeout: timeout)
+      http.open_timeout = [timeout, 10].min
+      response = http.request(request)
+      raise Error, "term-llm returned HTTP #{response.code}" unless response.is_a?(Net::HTTPSuccess)
+      data = JSON.parse(response.body)
+      raise Error, "invalid term-llm response" unless data.is_a?(Hash)
+      data
+    rescue JSON::ParserError,
+           SocketError,
+           SystemCallError,
+           IOError,
+           Timeout::Error,
+           OpenSSL::SSL::SSLError => e
+      raise Error, e.message
+    end
+
     def post_json(path, body)
       uri = parse_uri("#{base_url}#{path}")
       http = build_http(uri, read_timeout: 120)
@@ -310,9 +424,7 @@ module ::SecondBrain
       request.body = body.to_json
 
       response = http.request(request)
-      unless response.is_a?(Net::HTTPSuccess)
-        raise Error, "term-llm returned HTTP #{response.code}"
-      end
+      raise Error, "term-llm returned HTTP #{response.code}" unless response.is_a?(Net::HTTPSuccess)
 
       JSON.parse(response.body)
     rescue JSON::ParserError => e

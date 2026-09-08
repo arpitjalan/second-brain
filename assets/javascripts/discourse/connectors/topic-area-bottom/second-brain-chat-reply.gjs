@@ -11,6 +11,7 @@ import { getUploadMarkdown } from "discourse/lib/uploads";
 import DButton from "discourse/ui-kit/d-button";
 import { i18n } from "discourse-i18n";
 import SbAttach from "../../components/sb-attach";
+import SbChatRuntime from "../../components/sb-chat-runtime";
 
 // A frictionless inline reply box at the bottom of a chat (a PM). Type and
 // send — no composer. The post is created via the API and appended to the
@@ -108,6 +109,7 @@ export default class SecondBrainChatReply extends Component {
 
   <template>
     {{#if this.isChat}}
+      <SbChatRuntime @topic={{this.topic}} />
       <div class="sb-chat-reply sb-starter">
         <textarea
           class="sb-starter__input"
@@ -136,8 +138,12 @@ export default class SecondBrainChatReply extends Component {
         {{/if}}
         <div class="sb-starter__actions">
           <span class="sb-starter__left">
-            <SbAttach @onAdd={{this.addAttachment}} @disabled={{this.submitting}} />
-            <span class="sb-starter__link">Enter to send · Shift+Enter for newline</span>
+            <SbAttach
+              @onAdd={{this.addAttachment}}
+              @disabled={{this.submitting}}
+            />
+            <span class="sb-starter__link">Enter to send · Shift+Enter for
+              newline</span>
           </span>
           <DButton
             @action={{this.send}}

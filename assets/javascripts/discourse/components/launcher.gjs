@@ -13,6 +13,7 @@ import DiscourseURL from "discourse/lib/url";
 import { eq } from "discourse/truth-helpers";
 import DButton from "discourse/ui-kit/d-button";
 import SbAttach from "./sb-attach";
+import SbChatRuntime from "./sb-chat-runtime";
 
 // A few tappable starters that pre-fill the box — they teach a non-technical
 // family member what stan can do (research, planning, writing, widgets, Q&A).
@@ -72,6 +73,7 @@ export default class Launcher extends Component {
   @tracked attachments = [];
   @tracked agents = [];
   @tracked selectedAgent = null;
+  @tracked runtimeSelection = {};
   inputEl = null;
 
   get botUsername() {
@@ -126,9 +128,11 @@ export default class Launcher extends Component {
     try {
       const data = await ajax("/second-brain/agents");
       this.agents = data.agents || [];
+      this.runtimeSelection = {};
       this.selectedAgent = this.pickDefaultAgent();
     } catch {
       this.agents = [];
+      this.runtimeSelection = {};
       // Still honor the member's remembered choice so a transient fetch failure
       // doesn't silently fall back to the server default (owned-first), which
       // would override e.g. a member who prefers the family agent.
@@ -149,10 +153,18 @@ export default class Launcher extends Component {
 
   @action
   selectAgent(username) {
+    if (this.selectedAgent !== username) {
+      this.runtimeSelection = {};
+    }
     this.selectedAgent = username;
     if (this.currentUser) {
       writeStoredAgent(this.currentUser.id, username);
     }
+  }
+
+  @action
+  setRuntime(selection) {
+    this.runtimeSelection = selection;
   }
 
   @action
@@ -226,7 +238,7 @@ export default class Launcher extends Component {
       .filter((part) => part && part.trim())
       .join("\n\n");
 
-    const data = { message };
+    const data = { message, ...this.runtimeSelection };
     if (this.selectedAgent) {
       data.agent = this.selectedAgent;
     }
@@ -262,6 +274,7 @@ export default class Launcher extends Component {
             {{#each this.agents as |a|}}
               <button
                 type="button"
+                disabled={{this.starting}}
                 class="sb-agent-switch__pill
                   {{if (eq a.username this.selectedAgent) 'is-active'}}"
                 aria-pressed={{if
@@ -276,6 +289,12 @@ export default class Launcher extends Component {
             {{/each}}
           </div>
         {{/if}}
+
+        <SbChatRuntime
+          @agent={{this.selectedAgent}}
+          @disabled={{this.starting}}
+          @onChange={{this.setRuntime}}
+        />
 
         <div class="sb-starter">
           <textarea

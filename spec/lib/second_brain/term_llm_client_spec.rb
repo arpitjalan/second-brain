@@ -24,7 +24,9 @@ describe SecondBrain::TermLlmClient do
       stub_request(:get, "http://termllm.test/chat/v1/responses/resp_abc/events?after=2").to_return(
         status: 200,
         body: sse,
-        headers: { "Content-Type" => "text/event-stream" },
+        headers: {
+          "Content-Type" => "text/event-stream",
+        },
       )
 
       result = client.stream_events(response_id: "resp_abc", after: 2)
@@ -41,7 +43,9 @@ describe SecondBrain::TermLlmClient do
       stub_request(:get, "http://termllm.test/chat/v1/responses/resp_old/events?after=0").to_return(
         status: 200,
         body: sse,
-        headers: { "Content-Type" => "text/event-stream" },
+        headers: {
+          "Content-Type" => "text/event-stream",
+        },
       )
 
       result = client.stream_events(response_id: "resp_old", after: 0)
@@ -71,6 +75,59 @@ describe SecondBrain::TermLlmClient do
   end
 
   describe "#stream_respond (SSE parsing)" do
+    it "sends explicit runtime overrides and captures the final reported model and effort" do
+      SiteSetting.second_brain_term_llm_model = "agent-default"
+      body =
+        sse_frame(
+          event: "response.created",
+          data: {
+            response: {
+              id: "r1",
+              model: "initial",
+              reasoning_effort: "high",
+            },
+          },
+        ) + sse_delta("answer") +
+          sse_frame(
+            event: "response.completed",
+            data: {
+              response: {
+                id: "r1",
+                model: "final",
+                reasoning_effort: "low",
+                secret: "hidden",
+              },
+            },
+          ) + sse_done
+      stub =
+        stub_termllm_respond(body: body).with(
+          body: hash_including("model" => "selected", "reasoning_effort" => "high"),
+        )
+
+      result =
+        client.stream_respond(
+          [{ role: "user", content: "x" }],
+          model: "selected",
+          reasoning_effort: "high",
+        )
+
+      expect(result[:runtime]).to eq("model" => "final", "reasoning_effort" => "low")
+      expect(result[:text]).to eq("answer")
+      expect(stub).to have_been_requested
+    end
+
+    it "leaves effort unspecified and preserves the agent model when no conversation override exists" do
+      SiteSetting.second_brain_term_llm_model = "agent-default"
+      stub =
+        stub_termllm_respond(body: sse_done).with do |request|
+          data = JSON.parse(request.body)
+          data["model"] == "agent-default" && !data.key?("reasoning_effort")
+        end
+
+      client.stream_respond([{ role: "user", content: "x" }])
+      expect(stub).to have_been_requested
+    end
+
     it "parses a CRLF-framed stream (normalizes \\r\\n line endings)" do
       body =
         "id: 1\r\nevent: response.output_text.delta\r\ndata: {\"delta\":\"hi\"}\r\n\r\n" \
@@ -101,8 +158,7 @@ describe SecondBrain::TermLlmClient do
     it "ignores the ask_user tool's own tool_exec frames (shown as a prompt, not a tool)" do
       body =
         sse_tool_start(call_id: "au", name: "ask_user", args: {}, seq: 1) +
-          sse_delta("answer", seq: 2) +
-          sse_done
+          sse_delta("answer", seq: 2) + sse_done
       stub_termllm_respond(body: body)
 
       result = client.stream_respond([{ role: "user", content: "x" }])
@@ -113,10 +169,8 @@ describe SecondBrain::TermLlmClient do
 
     it "captures a response.failed run (does not present it as a normal reply)" do
       body =
-        sse_created("r1", seq: 1) +
-          sse_delta("partial", seq: 2) +
-          sse_failed(message: "upstream 529", type: "overloaded", seq: 3) +
-          sse_done
+        sse_created("r1", seq: 1) + sse_delta("partial", seq: 2) +
+          sse_failed(message: "upstream 529", type: "overloaded", seq: 3) + sse_done
       stub_termllm_respond(body: body)
 
       result = client.stream_respond([{ role: "user", content: "x" }])
@@ -174,26 +228,25 @@ describe SecondBrain::TermLlmClient do
     it "raises Expired on 409 (already answered / run gone)" do
       stub_termllm_ask_user(session_id: "s1", status: 409)
 
-      expect { client.submit_ask_user(session_id: "s1", call_id: "c1", answers: []) }.to raise_error(
-        SecondBrain::TermLlmClient::Expired,
-      )
+      expect {
+        client.submit_ask_user(session_id: "s1", call_id: "c1", answers: [])
+      }.to raise_error(SecondBrain::TermLlmClient::Expired)
     end
 
     it "raises Error on other non-2xx" do
       stub_termllm_ask_user(session_id: "s1", status: 500)
 
-      expect { client.submit_ask_user(session_id: "s1", call_id: "c1", answers: []) }.to raise_error(
-        SecondBrain::TermLlmClient::Error,
-      )
+      expect {
+        client.submit_ask_user(session_id: "s1", call_id: "c1", answers: [])
+      }.to raise_error(SecondBrain::TermLlmClient::Error)
     end
 
     it "does NOT silently advance the run on a 200 with a non-JSON body" do
       stub_termllm_ask_user(session_id: "s1", body: "not json")
 
-      expect { client.submit_ask_user(session_id: "s1", call_id: "c1", answers: []) }.to raise_error(
-        SecondBrain::TermLlmClient::Error,
-        /invalid JSON/,
-      )
+      expect {
+        client.submit_ask_user(session_id: "s1", call_id: "c1", answers: [])
+      }.to raise_error(SecondBrain::TermLlmClient::Error, /invalid JSON/)
     end
   end
 end

@@ -10,6 +10,55 @@ module ::SecondBrain
       render "default/empty"
     end
 
+    def runtime
+      topic, agent = runtime_chat
+      models = agent.client.models
+      latest = topic.posts.where(user_id: agent.user.id).order(post_number: :desc).first
+      reported = JSON.parse(latest&.custom_fields&.dig("second_brain_runtime") || "{}")
+      # Older replies predate metadata capture. Inspect their run without changing it.
+      if reported.blank? && latest&.reply_to_post_number
+        trigger_id = topic.posts.find_by(post_number: latest.reply_to_post_number)&.id
+        if trigger_id
+          begin
+            reported = agent.client.session_runtime("sb_#{topic.id}_#{trigger_id}")
+          rescue TermLlmClient::Error
+            reported = {}
+          end
+        end
+      end
+      render json:
+               runtime_selection(topic).merge(
+                 models: models,
+                 defaults: agent.client.runtime_defaults(models),
+                 last_reply: reported,
+               )
+    rescue TermLlmClient::Error
+      render_json_error I18n.t("second_brain.errors.runtime_unavailable"), status: 502
+    end
+
+    def agent_runtime
+      client = create_agent.client
+      models = client.models
+      render json: {
+               model: "",
+               reasoning_effort: "",
+               models: models,
+               defaults: client.runtime_defaults(models),
+             }
+    rescue TermLlmClient::Error
+      render_json_error I18n.t("second_brain.errors.runtime_unavailable"), status: 502
+    end
+
+    def update_runtime
+      topic, agent = runtime_chat
+      guardian.ensure_can_create_post!(topic)
+      runtime_fields(agent).each { |key, value| topic.custom_fields[key] = value }
+      topic.save_custom_fields(true)
+      render json: runtime_selection(topic)
+    rescue TermLlmClient::Error
+      render_json_error I18n.t("second_brain.errors.runtime_unavailable"), status: 502
+    end
+
     # Start a chat with one message — no title/recipient friction. We create the
     # PM with the bot, derive a throwaway title from the message (term-llm renames
     # it after the first reply), and return its URL so the UI navigates into it.
@@ -22,6 +71,8 @@ module ::SecondBrain
         return render_json_error I18n.t("second_brain.errors.not_configured"), status: 422
       end
 
+      fields = runtime_fields(agent)
+
       post =
         PostCreator.create!(
           current_user,
@@ -29,6 +80,10 @@ module ::SecondBrain
           raw: message,
           archetype: Archetype.private_message,
           target_usernames: agent.user.username,
+          # Topic fields are saved before post_created enqueues the first reply.
+          topic_opts: {
+            custom_fields: fields,
+          },
           skip_validations: true,
         )
 
@@ -38,6 +93,8 @@ module ::SecondBrain
       BotResponder.ensure_placeholder(post, agent)
 
       render json: { url: post.topic.relative_url }
+    rescue TermLlmClient::Error
+      render_json_error I18n.t("second_brain.errors.runtime_unavailable"), status: 502
     end
 
     # Turn a private chat (PM) into a public topic so the family can see it.
@@ -55,9 +112,7 @@ module ::SecondBrain
       end
 
       guardian.ensure_can_see!(topic)
-      unless current_user.staff? || topic.user_id == current_user.id
-        raise Discourse::InvalidAccess
-      end
+      raise Discourse::InvalidAccess unless current_user.staff? || topic.user_id == current_user.id
 
       category_id = SiteSetting.second_brain_public_category.presence&.to_i
 
@@ -80,14 +135,16 @@ module ::SecondBrain
     # personal agents they own. Drives the launcher's agent switcher.
     def agents
       list =
-        Agent.available_to(current_user).filter_map do |a|
-          next unless a.user
-          {
-            username: a.user.username,
-            name: a.user.name.presence || a.user.username,
-            owned: !a.shared?,
-          }
-        end
+        Agent
+          .available_to(current_user)
+          .filter_map do |a|
+            next unless a.user
+            {
+              username: a.user.username,
+              name: a.user.name.presence || a.user.username,
+              owned: !a.shared?,
+            }
+          end
       render json: { agents: list }
     end
 
@@ -161,7 +218,9 @@ module ::SecondBrain
         server_state = parse_state(post, "second_brain_askuser_state")
         raise Discourse::NotFound if public_state.nil? || server_state.nil?
         raise Discourse::InvalidAccess unless public_state["status"] == "pending"
-        raise Discourse::InvalidParameters, :call_id unless public_state["call_id"] == params[:call_id]
+        unless public_state["call_id"] == params[:call_id]
+          raise Discourse::InvalidParameters, :call_id
+        end
 
         answers = cancelled ? nil : build_answers(public_state["questions"] || [], params[:answers])
 
@@ -205,6 +264,37 @@ module ::SecondBrain
 
     private
 
+    def runtime_fields(agent)
+      model = params[:model].to_s.strip
+      effort = params[:reasoning_effort].to_s.strip
+      if model.present?
+        selected = agent.client.models.find { |entry| entry[:id] == model }
+        raise Discourse::InvalidParameters, :model unless selected
+        if effort.present? && !selected[:efforts].include?(effort)
+          raise Discourse::InvalidParameters, :reasoning_effort
+        end
+      elsif effort.present?
+        raise Discourse::InvalidParameters, :reasoning_effort
+      end
+      { "second_brain_model" => model.presence, "second_brain_reasoning_effort" => effort.presence }
+    end
+
+    def runtime_chat
+      topic = Topic.find_by(id: params[:topic_id])
+      raise Discourse::NotFound unless topic&.private_message?
+      guardian.ensure_can_see!(topic)
+      agent = Agent.for_topic(topic)
+      raise Discourse::InvalidAccess unless agent&.usable_by?(current_user)
+      [topic, agent]
+    end
+
+    def runtime_selection(topic)
+      {
+        model: topic.custom_fields["second_brain_model"].to_s,
+        reasoning_effort: topic.custom_fields["second_brain_reasoning_effort"].to_s,
+      }
+    end
+
     # Which agent a new chat is with. With no `agent` param: the member's own
     # personal agent if they have one, else the family agent. With a param: that
     # agent — but a personal agent only its owner may chat with.
@@ -228,8 +318,12 @@ module ::SecondBrain
       pm_ids =
         Topic
           .where(archetype: Archetype.private_message, deleted_at: nil)
-          .joins("JOIN topic_allowed_users sb_me ON sb_me.topic_id = topics.id AND sb_me.user_id = #{me}")
-          .joins("JOIN topic_allowed_users sb_bot ON sb_bot.topic_id = topics.id AND sb_bot.user_id IN (#{bot_ids_sql})")
+          .joins(
+            "JOIN topic_allowed_users sb_me ON sb_me.topic_id = topics.id AND sb_me.user_id = #{me}",
+          )
+          .joins(
+            "JOIN topic_allowed_users sb_bot ON sb_bot.topic_id = topics.id AND sb_bot.user_id IN (#{bot_ids_sql})",
+          )
           .pluck(:id)
 
       public_ids =

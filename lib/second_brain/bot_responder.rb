@@ -123,6 +123,8 @@ module ::SecondBrain
               messages,
               session_id: session_id,
               heartbeat: heartbeat,
+              model: @topic.custom_fields["second_brain_model"],
+              reasoning_effort: @topic.custom_fields["second_brain_reasoning_effort"],
               &on_update
             )
           end
@@ -180,6 +182,7 @@ module ::SecondBrain
         end
 
       full_text = pre_text + result[:text].to_s
+      persist_runtime(@post, result, session_id)
       tools = pre_tools + (result[:tools] || [])
 
       if result[:ask_user]
@@ -248,7 +251,8 @@ module ::SecondBrain
       current = @post.raw.to_s.strip
       public_state = parse_json(@post.custom_fields[ASK_FIELD])
       answered_resume =
-        public_state && public_state["status"] == "answered" && @post.custom_fields[STATE_FIELD].present?
+        public_state && public_state["status"] == "answered" &&
+          @post.custom_fields[STATE_FIELD].present?
       return false unless current == thinking || answered_resume
 
       note = I18n.t("second_brain.askuser.interrupted")
@@ -265,7 +269,9 @@ module ::SecondBrain
       end
       true
     rescue => e
-      Rails.logger.warn("second-brain: watchdog reconcile failed (post #{@post&.id}): #{e.class}: #{e.message}")
+      Rails.logger.warn(
+        "second-brain: watchdog reconcile failed (post #{@post&.id}): #{e.class}: #{e.message}",
+      )
       false
     end
 
@@ -329,7 +335,9 @@ module ::SecondBrain
           @agent.client.submit_ask_user(session_id: sid, call_id: cid, cancelled: true)
         rescue TermLlmClient::Error => e
           # Already gone/expired, or term-llm down — the run will time out anyway.
-          Rails.logger.warn("second-brain: superseding ask_user (post #{pending.id}): #{e.class}: #{e.message}")
+          Rails.logger.warn(
+            "second-brain: superseding ask_user (post #{pending.id}): #{e.class}: #{e.message}",
+          )
         end
       end
 
@@ -342,7 +350,9 @@ module ::SecondBrain
       pending.publish_change_to_clients!(:revised)
       true
     rescue => e
-      Rails.logger.warn("second-brain: supersede_pending_question! failed: #{e.class}: #{e.message}")
+      Rails.logger.warn(
+        "second-brain: supersede_pending_question! failed: #{e.class}: #{e.message}",
+      )
       false
     end
 
@@ -356,7 +366,9 @@ module ::SecondBrain
     def touch_alive(post)
       post.update_columns(updated_at: Time.zone.now)
     rescue => e
-      Rails.logger.warn("second-brain: heartbeat touch failed (post #{post&.id}): #{e.class}: #{e.message}")
+      Rails.logger.warn(
+        "second-brain: heartbeat touch failed (post #{post&.id}): #{e.class}: #{e.message}",
+      )
     end
 
     # Stream a term-llm call into `post`, painting the (optionally seeded) reply
@@ -409,6 +421,7 @@ module ::SecondBrain
 
     # Either pause for an ask_user prompt or finalize the reply + title the chat.
     def conclude(post, session_id, seed_text, seed_tools, result, messages)
+      persist_runtime(post, result, session_id)
       full_text = seed_text.to_s + result[:text].to_s
       tools = seed_tools + (result[:tools] || [])
       if result[:ask_user]
@@ -481,6 +494,21 @@ module ::SecondBrain
     end
 
     # Persist the final answer once and tell clients streaming is done.
+    def persist_runtime(post, result, session_id)
+      return if result[:runtime].blank?
+      runtime = result[:runtime]
+      # Default models can encode effort in their name; session state normalizes it.
+      if runtime["reasoning_effort"].blank?
+        begin
+          runtime = runtime.merge(@agent.client.session_runtime(session_id))
+        rescue TermLlmClient::Error
+          # A metadata lookup must not discard a completed answer.
+        end
+      end
+      post.custom_fields["second_brain_runtime"] = runtime.to_json
+      post.save_custom_fields(true)
+    end
+
     def finalize(post, text, tools)
       final = render_reply(text, tools)
       final = I18n.t("second_brain.empty_reply") if final.blank?
@@ -529,7 +557,14 @@ module ::SecondBrain
         else
           "/second-brain/agent-widgets/#{@agent.user.username}/"
         end
-      path = (URI.parse(base_url).path.presence rescue nil).to_s
+      path =
+        (
+          begin
+            URI.parse(base_url).path.presence
+          rescue StandardError
+            nil
+          end
+        ).to_s
       result = markdown.gsub("#{base_url}/widgets/", prefix)
       result.gsub(%r{(?<![\w:/])#{Regexp.escape("#{path}/widgets/")}}, prefix)
     end
@@ -579,9 +614,24 @@ module ::SecondBrain
     # Non-essential tool args we hide (matching term-llm's chat UI), so the
     # summary stays clean — the meaningful arg (command/pattern/path/…) is enough.
     NOISE_ARG_KEYS = %w[
-      description context_lines max_results multiline files_with_matches
-      include exclude type start_line end_line case_sensitive head_limit
-      offset limit count line_numbers timeout_seconds timeout
+      description
+      context_lines
+      max_results
+      multiline
+      files_with_matches
+      include
+      exclude
+      type
+      start_line
+      end_line
+      case_sensitive
+      head_limit
+      offset
+      limit
+      count
+      line_numbers
+      timeout_seconds
+      timeout
     ].freeze
 
     # Show the important args first.
@@ -593,9 +643,7 @@ module ::SecondBrain
     def tool_args_markdown(tool)
       args = tool[:args].is_a?(Hash) ? tool[:args] : {}
       pairs =
-        args.reject do |k, v|
-          NOISE_ARG_KEYS.include?(k.to_s) || v.nil? || v.to_s.strip.empty?
-        end
+        args.reject { |k, v| NOISE_ARG_KEYS.include?(k.to_s) || v.nil? || v.to_s.strip.empty? }
 
       if pairs.empty?
         info = tool[:info].to_s.sub(/\A\(/, "").sub(/\)\z/, "").strip

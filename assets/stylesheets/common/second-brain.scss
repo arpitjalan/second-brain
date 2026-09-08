@@ -1017,3 +1017,40 @@ body:not(.has-sidebar-page) #main-outlet-wrapper .sidebar-wrapper {
     transform: translateY(0);
   }
 }
+
+.sb-runtime {
+  margin-block: 1em;
+  color: var(--primary-medium);
+  font-size: var(--font-down-1);
+
+  &__summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5em;
+  }
+
+  .form-kit {
+    margin-top: 0.75em;
+    max-width: 40em;
+  }
+}
+
+.sb-reply-runtime {
+  margin-inline-end: 0.75em;
+  color: var(--primary-medium);
+  font-size: var(--font-down-1);
+  overflow-wrap: anywhere;
+}
+
+.sb-launcher .sb-runtime {
+  text-align: left;
+
+  &__summary {
+    justify-content: center;
+  }
+
+  .form-kit {
+    margin-inline: auto;
+  }
+}

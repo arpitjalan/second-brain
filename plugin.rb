@@ -59,10 +59,25 @@ after_initialize do
   # Marks a chat that's been published to the family (scopes the shared-chat
   # results in ChatsController#search).
   register_topic_custom_field_type("second_brain_shared", :boolean)
+  register_topic_custom_field_type("second_brain_model", :string)
+  register_topic_custom_field_type("second_brain_reasoning_effort", :string)
+  register_post_custom_field_type("second_brain_runtime", :string)
 
   # Expose only the public ask_user field to the client (preloaded in topic
   # views via the allowlister), parsed to an object the form renderer reads.
-  topic_view_post_custom_fields_allowlister { |_user, _topic| ["second_brain_askuser"] }
+  topic_view_post_custom_fields_allowlister do |_user, _topic|
+    %w[second_brain_askuser second_brain_runtime]
+  end
+
+  add_to_serializer(
+    :post,
+    :second_brain_runtime,
+    include_condition: -> { post_custom_fields.key?("second_brain_runtime") },
+  ) do
+    JSON.parse(post_custom_fields["second_brain_runtime"])
+  rescue StandardError
+    nil
+  end
 
   # Works in both paths: topic-view loads (preloaded via the allowlister) and the
   # single-post `:revised` refetch (no topic_view → object.custom_fields).
@@ -70,7 +85,11 @@ after_initialize do
     :post,
     :second_brain_askuser,
     include_condition: -> { post_custom_fields.key?("second_brain_askuser") },
-  ) { JSON.parse(post_custom_fields["second_brain_askuser"]) rescue nil }
+  ) do
+    JSON.parse(post_custom_fields["second_brain_askuser"])
+  rescue StandardError
+    nil
+  end
 
   add_to_serializer(
     :topic_view,
@@ -89,8 +108,11 @@ after_initialize do
     get "/second-brain/search" => "second_brain/chats#search"
     # The agents this member may chat with (family + their own) — for the switcher.
     get "/second-brain/agents" => "second_brain/chats#agents"
+    get "/second-brain/agent-runtime" => "second_brain/chats#agent_runtime"
     # Start a chat from a single message (frictionless homepage box).
     post "/second-brain/chats" => "second_brain/chats#create"
+    get "/second-brain/chats/:topic_id/runtime" => "second_brain/chats#runtime"
+    put "/second-brain/chats/:topic_id/runtime" => "second_brain/chats#update_runtime"
     # Turn a private chat into a public topic.
     post "/second-brain/chats/:topic_id/make_public" => "second_brain/chats#make_public"
     # Answer a pending ask_user prompt (resumes the paused run).
@@ -100,11 +122,11 @@ after_initialize do
     # Proxy a specific agent's widget pages/assets (with that agent's token).
     # Forward writes too (POST/PUT/PATCH/DELETE) so interactive widgets work.
     match "/second-brain/agent-widgets/:agent/*path" => "second_brain/widgets#show",
-          format: false,
-          via: %i[get post put patch delete]
+          :format => false,
+          :via => %i[get post put patch delete]
     # Legacy/family widget proxy (no agent segment) — keeps old embeds working.
     match "/second-brain/widgets/*path" => "second_brain/widgets#show",
-          format: false,
-          via: %i[get post put patch delete]
+          :format => false,
+          :via => %i[get post put patch delete]
   end
 end

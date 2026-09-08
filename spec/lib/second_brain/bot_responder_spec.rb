@@ -37,6 +37,77 @@ describe SecondBrain::BotResponder do
     end
   end
 
+  describe "conversation model selection" do
+    [200, 404].each do |status|
+      it "preserves the answer when resolving default effort returns #{status}" do
+        topic.custom_fields["second_brain_titled"] = true
+        topic.save_custom_fields(true)
+        stub_termllm_respond(
+          body:
+            sse_frame(
+              event: "response.created",
+              data: {
+                response: {
+                  id: "default-r1",
+                  model: "gpt-5.5-medium",
+                },
+              },
+            ) + sse_delta("Default model answer.") + sse_done,
+        )
+        stub_request(
+          :get,
+          "#{TermLlmSseHelpers::TERMLLM_BASE}/v1/sessions/sb_#{topic.id}_#{human_post.id}/state",
+        ).to_return(status: status, body: { model: "gpt-5.5", reasoning_effort: "medium" }.to_json)
+
+        described_class.new(human_post).respond!
+
+        reply = topic.posts.find_by(user_id: bot.id)
+        expect(reply.raw).to include("Default model answer.")
+        runtime = JSON.parse(reply.custom_fields["second_brain_runtime"])
+        if status == 200
+          expect(runtime).to eq("model" => "gpt-5.5", "reasoning_effort" => "medium")
+        else
+          expect(runtime).to eq("model" => "gpt-5.5-medium")
+        end
+      end
+    end
+
+    it "uses the topic selection and retains the reported runtime on the answer after a settings change" do
+      topic.custom_fields["second_brain_model"] = "chosen-model"
+      topic.custom_fields["second_brain_reasoning_effort"] = "high"
+      topic.custom_fields["second_brain_titled"] = true
+      topic.save_custom_fields(true)
+      stub =
+        stub_termllm_respond(
+          body:
+            sse_frame(
+              event: "response.created",
+              data: {
+                response: {
+                  id: "runtime-r1",
+                  model: "resolved-model",
+                  reasoning_effort: "high",
+                },
+              },
+            ) + sse_delta("A model selection test answer.") + sse_done,
+        ).with(body: hash_including("model" => "chosen-model", "reasoning_effort" => "high"))
+
+      described_class.new(human_post).respond!
+      reply = topic.posts.find_by(user_id: bot.id)
+      expect(JSON.parse(reply.custom_fields["second_brain_runtime"])).to eq(
+        "model" => "resolved-model",
+        "reasoning_effort" => "high",
+      )
+      expect(stub).to have_been_requested
+
+      topic.custom_fields["second_brain_model"] = "another-model"
+      topic.save_custom_fields(true)
+      expect(JSON.parse(reply.reload.custom_fields["second_brain_runtime"])["model"]).to eq(
+        "resolved-model",
+      )
+    end
+  end
+
   describe "#forum_context" do
     it "sends the forum note as a developer message, not system" do
       # A system-role message would make term-llm skip injecting the agent's own
@@ -172,7 +243,10 @@ describe SecondBrain::BotResponder do
     it "streams a plain answer and finalizes the placeholder with it" do
       stub_termllm_respond(body: sse_delta("Hello ") + sse_delta("there", seq: 2) + sse_done)
 
-      messages = MessageBus.track_publish("/second-brain/stream") { described_class.new(human_post).respond! }
+      messages =
+        MessageBus.track_publish("/second-brain/stream") do
+          described_class.new(human_post).respond!
+        end
 
       expect(bot_reply.raw).to eq("Hello there")
       expect(messages.last.data[:done]).to eq(true)
@@ -180,7 +254,8 @@ describe SecondBrain::BotResponder do
 
     it "ignores keepalive pings interleaved with the content" do
       body =
-        sse_ping + sse_delta("Hel", seq: 1) + sse_ping + sse_delta("lo", seq: 2) + sse_ping + sse_done
+        sse_ping + sse_delta("Hel", seq: 1) + sse_ping + sse_delta("lo", seq: 2) + sse_ping +
+          sse_done
       stub_termllm_respond(body: body)
 
       described_class.new(human_post).respond!
@@ -191,8 +266,7 @@ describe SecondBrain::BotResponder do
     it "renders tool calls as a collapsible summary above the answer" do
       body =
         sse_tool_start(call_id: "t1", name: "web_search", args: { "query" => "weather" }, seq: 1) +
-          sse_tool_end(call_id: "t1", success: true, seq: 2) +
-          sse_delta("It is sunny.", seq: 3) +
+          sse_tool_end(call_id: "t1", success: true, seq: 2) + sse_delta("It is sunny.", seq: 3) +
           sse_done
       stub_termllm_respond(body: body)
 
@@ -229,8 +303,7 @@ describe SecondBrain::BotResponder do
       # whole answer; now it must keep the partial AND append the failure note.
       body =
         sse_delta("Here is what I found so f", seq: 1) +
-          sse_failed(message: "provider timeout", seq: 2) +
-          sse_done
+          sse_failed(message: "provider timeout", seq: 2) + sse_done
       stub_termllm_respond(body: body)
 
       described_class.new(human_post).respond!
@@ -365,7 +438,9 @@ describe SecondBrain::BotResponder do
       post.reload
       expect(post.raw).to include("Before the question.")
       expect(post.raw).to include(I18n.t("second_brain.askuser.interrupted"))
-      expect(JSON.parse(post.custom_fields[described_class::ASK_FIELD])["status"]).to eq("interrupted")
+      expect(JSON.parse(post.custom_fields[described_class::ASK_FIELD])["status"]).to eq(
+        "interrupted",
+      )
     end
 
     it "resumes only once when two resume jobs race (claim_resume!)" do
@@ -440,7 +515,9 @@ describe SecondBrain::BotResponder do
 
       post.reload
       expect(post.raw).to include(I18n.t("second_brain.askuser.interrupted"))
-      expect(JSON.parse(post.custom_fields[described_class::ASK_FIELD])["status"]).to eq("interrupted")
+      expect(JSON.parse(post.custom_fields[described_class::ASK_FIELD])["status"]).to eq(
+        "interrupted",
+      )
     end
 
     # Residual stuck-case (not yet fixed): if term-llm pauses on ask_user WITHOUT
@@ -462,7 +539,9 @@ describe SecondBrain::BotResponder do
 
       # No reconnect attempted, post left stranded — documents the gap.
       expect(WebMock).not_to have_requested(:get, %r{/v1/responses/.*/events})
-      expect(JSON.parse(post.reload.custom_fields[described_class::ASK_FIELD])["status"]).to eq("answered")
+      expect(JSON.parse(post.reload.custom_fields[described_class::ASK_FIELD])["status"]).to eq(
+        "answered",
+      )
     end
   end
 
@@ -501,17 +580,22 @@ describe SecondBrain::BotResponder do
 
       # Old question cancelled on term-llm and marked skipped.
       expect(
-        a_request(:post, "http://termllm.test/chat/v1/sessions/sb_#{topic.id}/ask_user").with { |req|
-          JSON.parse(req.body)["cancelled"] == true
-        },
+        a_request(
+          :post,
+          "http://termllm.test/chat/v1/sessions/sb_#{topic.id}/ask_user",
+        ).with { |req| JSON.parse(req.body)["cancelled"] == true },
       ).to have_been_made.once
-      expect(JSON.parse(pending_post.reload.custom_fields[described_class::ASK_FIELD])["status"]).to eq("skipped")
+      expect(
+        JSON.parse(pending_post.reload.custom_fields[described_class::ASK_FIELD])["status"],
+      ).to eq("skipped")
       expect(pending_post.custom_fields[described_class::STATE_FIELD]).to be_nil
 
       # New turn ran on a per-turn session id (not the busy "sb_<topic>").
       expect(
         a_request(:post, "http://termllm.test/chat/v1/responses").with(
-          headers: { "session_id" => "sb_#{topic.id}_#{new_message.id}" },
+          headers: {
+            "session_id" => "sb_#{topic.id}_#{new_message.id}",
+          },
         ),
       ).to have_been_made.once
 
@@ -530,7 +614,9 @@ describe SecondBrain::BotResponder do
       expect(WebMock).not_to have_requested(:post, %r{/v1/sessions/.*/ask_user})
       expect(
         a_request(:post, "http://termllm.test/chat/v1/responses").with(
-          headers: { "session_id" => "sb_#{topic.id}_#{new_message.id}" },
+          headers: {
+            "session_id" => "sb_#{topic.id}_#{new_message.id}",
+          },
         ),
       ).to have_been_made.once
     end

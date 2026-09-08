@@ -130,6 +130,21 @@ prompt to see the interactive question form.
 
 `scripts/setup-local-dev.sh` sets the first two and the forum-actions flag for you.
 
+### Conversation model and effort
+
+Use **Model and effort** on the launcher or above a bot chat's reply box to choose from that agent's
+current provider's models and supported effort levels. **Save for this conversation**
+applies to future replies in that chat; replies already running retain their settings.
+**Agent default (model · effort)** clears the conversation override. No additional setup is needed.
+On the launcher, **Use for new chat** applies the choice from the first reply and
+saves it with the new conversation. Switching agents clears the launcher's model choice.
+
+The model picker shows the agent’s configured default model and advertised reasoning effort before a new chat. Defaults are read from term-llm’s `/v1/providers` and `/v1/models`, with the plugin’s model setting taking precedence. Missing effort metadata is omitted from the label; viewing defaults does not pin an override.
+
+New agent replies show the model and effort reported by term-llm. When effort is not
+reported, the label shows only the model. Models without advertised effort choices
+keep the default. Older individual replies are not backfilled.
+
 ### Going private (before inviting real family)
 
 Two one-shot rake tasks (auto-loaded by Discourse):

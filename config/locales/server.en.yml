@@ -16,6 +16,7 @@ en:
       waiting: "_I need a bit more info to help — please answer below._"
       interrupted: "_⚠️ I lost the connection before I could finish. Ask me again to continue._"
     errors:
+      runtime_unavailable: "Could not load model settings from the agent. Please try again."
       widget_unavailable: "Could not reach the widget. Please try refreshing."
       not_configured: "term-llm is not configured. Set the term-llm URL in site settings."
       reply_failed: "Sorry — I couldn't reach term-llm just now. Please try again."

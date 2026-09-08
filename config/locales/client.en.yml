@@ -2,3 +2,22 @@ en:
   js:
     second_brain:
       reply_placeholder: "Message %{name}…"
+      runtime:
+        configure: "Model and effort"
+        defaults: "Agent default (%{selection})"
+        model_unknown: "Model not reported"
+        default_effort: "Default effort"
+        model: "Model"
+        effort: "Reasoning effort"
+        no_efforts: "The agent has not reported effort options for this model."
+        next_reply: "Next reply: %{selection}"
+        first_reply: "New chat: %{selection}"
+        applies_first: "Use this selection from the first reply. You can change it later in the conversation."
+        use_for_chat: "Use for new chat"
+        reported: "Reported by the agent"
+        applies_next: "Applies to future replies in this conversation. Replies already running keep their settings."
+        save: "Save for this conversation"
+        cancel: "Cancel"
+        loading: "Loading model settings…"
+        unavailable: "Model settings are unavailable. You can still send messages."
+        retry: "Retry"
