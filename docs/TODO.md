@@ -8,6 +8,12 @@ working feature for a fix.
 
 ## 1. Isolate widget iframes off the Discourse origin (security — HIGH)
 
+**MVP posture:** keep the existing setup and treat widget code as trusted. The
+proxy rejects writes whose browser Origin or Fetch Metadata identifies another
+origin/site, and keeps connection diagnostics in server logs. Requests without
+those browser headers retain existing behavior. These checks do not isolate
+widget JavaScript from the forum; separate-origin work remains deferred.
+
 **Status:** deferred. Real fix carries regression risk to the working widget
 feature, so it must ship behind a flag with a fallback (see "Safe rollout").
 

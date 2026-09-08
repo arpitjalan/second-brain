@@ -16,9 +16,10 @@ module ::SecondBrain
     requires_plugin "second-brain"
     requires_login
     skip_before_action :check_xhr, only: %i[show], raise: false
-    # Widget writes (POST/PUT/…) are authenticated upstream by the agent's Bearer
-    # token, not Discourse's CSRF token — skip the forgery check for the proxy.
+    # Widget scripts do not send Discourse's CSRF token. Check browser origin
+    # instead; upstream bearer authentication alone would not prevent CSRF.
     skip_before_action :verify_authenticity_token, only: %i[show], raise: false
+    before_action :check_widget_write_origin, only: :show
 
     # Widgets are self-contained pages with inline scripts; Discourse's strict
     # CSP would block them. We set our own (permissive) CSP on the proxied
@@ -81,15 +82,29 @@ module ::SecondBrain
       response.headers["Cache-Control"] = "no-store"
       response.headers["Content-Security-Policy"] = WIDGET_CSP
       render body: body, status: upstream.code.to_i, content_type: content_type
-    rescue SocketError, Timeout::Error, Errno::ECONNREFUSED, Errno::EHOSTUNREACH,
-           Errno::ECONNRESET, EOFError, Net::HTTPBadResponse => e
+    rescue SocketError,
+           Timeout::Error,
+           Errno::ECONNREFUSED,
+           Errno::EHOSTUNREACH,
+           Errno::ECONNRESET,
+           EOFError,
+           Net::HTTPBadResponse => e
       # A widget process that dies mid-response (the manager SIGKILLs on failure and
       # reaps idle ones) resets/EOFs the connection — surface the calm 502 rather
       # than letting it bubble to a Discourse 500 page rendered inside the iframe.
-      render plain: "Could not reach the widget: #{e.message}", status: :bad_gateway
+      Rails.logger.warn("second-brain: widget proxy failed: #{e.class}: #{e.message}")
+      render plain: I18n.t("second_brain.errors.widget_unavailable"), status: :bad_gateway
     end
 
     private
+
+    def check_widget_write_origin
+      return if request.get? || request.head?
+
+      origin = request.headers["Origin"]
+      foreign_site = %w[same-site cross-site].include?(request.headers["Sec-Fetch-Site"])
+      raise Discourse::InvalidAccess if foreign_site || (origin && origin != request.base_url)
+    end
 
     # Reject any attempt to walk out of the widgets subtree. A single
     # `path.include?("..")` guard is NOT enough: Rails decodes the glob param once,
@@ -177,7 +192,12 @@ module ::SecondBrain
           open_timeout: 4,
           read_timeout: 6,
         )
-      data = JSON.parse(upstream.body) rescue {}
+      data =
+        begin
+          JSON.parse(upstream.body)
+        rescue StandardError
+          {}
+        end
       prefix = agent.widget_proxy_prefix
       Array(data["widgets"]).filter_map do |w|
         mount = (w["mount"] || w["id"]).to_s
@@ -241,7 +261,7 @@ module ::SecondBrain
         response = http.request(request)
 
         unless response.is_a?(Net::HTTPRedirection) && response["location"].present?
-          return [response, uri]
+          return response, uri
         end
 
         uri = URI.join(uri.to_s, response["location"])

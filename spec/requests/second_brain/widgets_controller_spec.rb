@@ -27,7 +27,9 @@ describe SecondBrain::WidgetsController do
     it "lets the owner load their personal agent's widget (with that agent's token)" do
       stub =
         stub_request(:get, "http://personal.test/chat/widgets/chore").with(
-          headers: { "Authorization" => "Bearer pers-token" },
+          headers: {
+            "Authorization" => "Bearer pers-token",
+          },
         ).to_return(status: 200, body: "<b>chore</b>", headers: { "Content-Type" => "text/html" })
 
       sign_in(owner)
@@ -38,13 +40,16 @@ describe SecondBrain::WidgetsController do
     end
 
     it "rewrites absolute widget-base paths in the HTML back to the owning agent" do
-      html = +'<a href="/chat/widgets/sub">x</a>' \
-        '<script>fetch("/second-brain/widgets/data")</script>' \
-        '<img src="relative/pic.png">'
+      html =
+        +'<a href="/chat/widgets/sub">x</a>' \
+          '<script>fetch("/second-brain/widgets/data")</script>' \
+          '<img src="relative/pic.png">'
       stub_request(:get, "http://personal.test/chat/widgets/dash").to_return(
         status: 200,
         body: html,
-        headers: { "Content-Type" => "text/html" },
+        headers: {
+          "Content-Type" => "text/html",
+        },
       )
 
       sign_in(owner)
@@ -65,18 +70,24 @@ describe SecondBrain::WidgetsController do
       # WITHOUT a browser redirect (a redirect would loop on this glob route).
       stub_request(:get, "http://personal.test/chat/widgets/board").to_return(
         status: 301,
-        headers: { "Location" => "http://personal.test/chat/widgets/board/" },
+        headers: {
+          "Location" => "http://personal.test/chat/widgets/board/",
+        },
       )
       stub_request(:get, "http://personal.test/chat/widgets/board/").to_return(
         status: 200,
         body: "<html><head><title>b</title></head><body>x</body></html>",
-        headers: { "Content-Type" => "text/html" },
+        headers: {
+          "Content-Type" => "text/html",
+        },
       )
 
       sign_in(owner)
       get "/second-brain/agent-widgets/stan_arpit/board" # no trailing slash
       expect(response.status).to eq(200) # served, not redirected → no loop
-      expect(response.body).to include('<base href="/second-brain/agent-widgets/stan_arpit/board/">')
+      expect(response.body).to include(
+        '<base href="/second-brain/agent-widgets/stan_arpit/board/">',
+      )
     end
 
     it "forbids a non-owner from loading someone else's personal widget" do
@@ -115,7 +126,9 @@ describe SecondBrain::WidgetsController do
       # followed with the Bearer token onto term-llm's privileged endpoints.
       stub_request(:get, "http://personal.test/chat/widgets/evil").to_return(
         status: 301,
-        headers: { "Location" => "http://personal.test/chat/v1/sessions" },
+        headers: {
+          "Location" => "http://personal.test/chat/v1/sessions",
+        },
       )
       escape =
         stub_request(:get, "http://personal.test/chat/v1/sessions").to_return(
@@ -134,20 +147,144 @@ describe SecondBrain::WidgetsController do
       # Interactive widgets (e.g. movie-night-picker's "Add") POST to their backend;
       # the proxy must carry the method, body, and content-type to term-llm — not just GET.
       stub =
-        stub_request(:post, "http://personal.test/chat/widgets/movie-night-picker/api/movies")
-          .with(
-            headers: { "Authorization" => "Bearer pers-token", "Content-Type" => "application/json" },
-            body: '{"title":"Arrival"}',
-          )
-          .to_return(status: 201, body: '{"ok":true}', headers: { "Content-Type" => "application/json" })
+        stub_request(:post, "http://personal.test/chat/widgets/movie-night-picker/api/movies").with(
+          headers: {
+            "Authorization" => "Bearer pers-token",
+            "Content-Type" => "application/json",
+          },
+          body: '{"title":"Arrival"}',
+        ).to_return(
+          status: 201,
+          body: '{"ok":true}',
+          headers: {
+            "Content-Type" => "application/json",
+          },
+        )
 
       sign_in(owner)
       post "/second-brain/agent-widgets/stan_arpit/movie-night-picker/api/movies",
            params: '{"title":"Arrival"}',
-           headers: { "Content-Type" => "application/json" }
+           headers: {
+             "Content-Type" => "application/json",
+             "Origin" => Discourse.base_url,
+           }
       expect(response.status).to eq(201)
       expect(response.parsed_body["ok"]).to eq(true)
       expect(stub).to have_been_requested
+    end
+
+    it "rejects widget writes from other origins before contacting the agent" do
+      upstream = stub_request(:post, "http://personal.test/chat/widgets/chore/api/items")
+      sign_in(owner)
+
+      %w[https://other.example null].each do |origin|
+        post "/second-brain/agent-widgets/stan_arpit/chore/api/items",
+             params: {
+               title: "unwanted item",
+             },
+             headers: {
+               "Origin" => origin,
+             }
+
+        expect(response.status).to eq(403)
+      end
+      expect(upstream).not_to have_been_requested
+    end
+
+    it "rejects same-site and cross-site writes when the Origin header is missing" do
+      upstream = stub_request(:post, "http://personal.test/chat/widgets/chore/api/items")
+      sign_in(owner)
+
+      %w[same-site cross-site].each do |site|
+        post "/second-brain/agent-widgets/stan_arpit/chore/api/items",
+             params: {
+               title: "unwanted item",
+             },
+             headers: {
+               "Sec-Fetch-Site" => site,
+             }
+
+        expect(response.status).to eq(403)
+      end
+      expect(upstream).not_to have_been_requested
+    end
+
+    it "keeps connection diagnostics out of the widget response" do
+      diagnostic = "connection to internal-agent.example:8082 refused"
+      stub_request(:get, "http://personal.test/chat/widgets/chore").to_raise(
+        Errno::ECONNREFUSED.new(diagnostic),
+      )
+      sign_in(owner)
+
+      get "/second-brain/agent-widgets/stan_arpit/chore"
+
+      expect(response.status).to eq(502)
+      expect(response.body).to include(I18n.t("second_brain.errors.widget_unavailable"))
+      expect(response.body).not_to include(diagnostic)
+    end
+  end
+
+  describe "#show write compatibility" do
+    [
+      %w[/second-brain/widgets http://family.test/chat/widgets fam-token],
+      %w[/second-brain/agent-widgets/stan_arpit http://personal.test/chat/widgets pers-token],
+    ].each do |proxy, upstream, token|
+      it "preserves normal writes and rejects foreign origins on #{proxy}" do
+        sign_in(owner)
+
+        %i[post put patch delete].each do |method|
+          stub =
+            stub_request(method, "#{upstream}/chore/api/items").with(
+              headers: {
+                "Authorization" => "Bearer #{token}",
+              },
+              body: '{"done":true}',
+            ).to_return(status: 200, body: '{"ok":true}')
+
+          [
+            {},
+            { "Origin" => Discourse.base_url, "Sec-Fetch-Site" => "same-origin" },
+          ].each do |headers|
+            public_send(
+              method,
+              "#{proxy}/chore/api/items",
+              params: '{"done":true}',
+              headers: headers.merge("Content-Type" => "application/json"),
+            )
+            expect(response.status).to eq(200)
+          end
+
+          public_send(
+            method,
+            "#{proxy}/chore/api/items",
+            params: '{"done":true}',
+            headers: {
+              "Content-Type" => "application/json",
+              "Origin" => "https://other.example",
+            },
+          )
+          expect(response.status).to eq(403)
+          expect(stub).to have_been_requested.twice
+        end
+      end
+    end
+
+    it "accepts the external HTTPS origin behind a reverse proxy" do
+      upstream = stub_request(:post, "http://family.test/chat/widgets/chore/api/items")
+      sign_in(owner)
+
+      post "/second-brain/widgets/chore/api/items",
+           params: {
+             done: true,
+           },
+           headers: {
+             "Origin" => "https://#{Discourse.current_hostname}",
+             "X-Forwarded-Proto" => "https",
+             "Sec-Fetch-Site" => "same-origin",
+           }
+
+      expect(response.status).to eq(200)
+      expect(upstream).to have_been_requested
     end
   end
 
@@ -155,7 +292,9 @@ describe SecondBrain::WidgetsController do
     it "serves a family widget with the family token (blank agent → Agent.family)" do
       stub =
         stub_request(:get, "http://family.test/chat/widgets/famwidget").with(
-          headers: { "Authorization" => "Bearer fam-token" },
+          headers: {
+            "Authorization" => "Bearer fam-token",
+          },
         ).to_return(status: 200, body: "<b>fam</b>", headers: { "Content-Type" => "text/html" })
 
       sign_in(owner)
